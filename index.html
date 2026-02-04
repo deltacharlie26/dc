@@ -1,159 +1,79 @@
-
 <!DOCTYPE html>
 
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🔍 You Found Me!</title>
+    <title>You Found Me!</title>
     <style>
-        * {
+        body {
             margin: 0;
             padding: 0;
-            box-sizing: border-box;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #ff6b6b 0%, #feca57 25%, #48dbfb 50%, #ff9ff3 75%, #54a0ff 100%);
         }
 
 ```
-    body {
-        min-height: 100vh;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        background: linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab);
-        background-size: 400% 400%;
-        animation: gradientShift 15s ease infinite;
-        overflow: hidden;
-    }
-
-    @keyframes gradientShift {
-        0% { background-position: 0% 50%; }
-        50% { background-position: 100% 50%; }
-        100% { background-position: 0% 50%; }
-    }
-
     .container {
         text-align: center;
-        padding: 3rem 2rem;
-        background: rgba(255, 255, 255, 0.15);
-        backdrop-filter: blur(10px);
-        border-radius: 30px;
-        box-shadow: 0 25px 45px rgba(0, 0, 0, 0.2);
-        border: 1px solid rgba(255, 255, 255, 0.3);
-        max-width: 600px;
-        margin: 1rem;
+        padding: 40px 30px;
+        background-color: rgba(0, 0, 0, 0.2);
+        border-radius: 20px;
+        margin: 20px;
+        max-width: 500px;
     }
 
     .magnifying-glass {
-        font-size: 6rem;
-        animation: wobble 2s ease-in-out infinite;
-        display: inline-block;
-    }
-
-    @keyframes wobble {
-        0%, 100% { transform: rotate(-10deg); }
-        50% { transform: rotate(10deg); }
+        font-size: 80px;
     }
 
     h1 {
-        font-size: 3rem;
+        font-size: 48px;
         color: white;
-        text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.3);
-        margin: 1.5rem 0 0.5rem;
-        animation: popIn 0.6s ease-out;
-    }
-
-    @keyframes popIn {
-        0% { transform: scale(0); opacity: 0; }
-        50% { transform: scale(1.1); }
-        100% { transform: scale(1); opacity: 1; }
+        margin: 20px 0 10px;
     }
 
     .sherlock {
-        font-size: 2rem;
+        font-size: 28px;
         color: #fff3cd;
         font-style: italic;
-        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
-        margin-bottom: 1.5rem;
+        margin-bottom: 20px;
+    }
+
+    .hat {
+        font-size: 50px;
     }
 
     .subtext {
         color: white;
-        font-size: 1.1rem;
-        opacity: 0.9;
-        line-height: 1.6;
-    }
-
-    .hat {
-        font-size: 4rem;
-        display: inline-block;
-        animation: tip 3s ease-in-out infinite;
-    }
-
-    @keyframes tip {
-        0%, 100% { transform: translateY(0) rotate(0deg); }
-        25% { transform: translateY(-10px) rotate(-5deg); }
-        75% { transform: translateY(-5px) rotate(5deg); }
+        font-size: 18px;
+        line-height: 1.8;
     }
 
     .footer {
-        margin-top: 2rem;
-        color: rgba(255, 255, 255, 0.7);
-        font-size: 0.9rem;
-    }
-
-    .sparkles {
-        position: fixed;
-        width: 100%;
-        height: 100%;
-        pointer-events: none;
-        overflow: hidden;
-        z-index: -1;
-    }
-
-    .sparkle {
-        position: absolute;
-        width: 10px;
-        height: 10px;
-        background: white;
-        border-radius: 50%;
-        opacity: 0;
-        animation: sparkle 4s ease-in-out infinite;
-    }
-
-    @keyframes sparkle {
-        0%, 100% { opacity: 0; transform: scale(0); }
-        50% { opacity: 0.8; transform: scale(1); }
+        margin-top: 30px;
+        color: rgba(255, 255, 255, 0.8);
+        font-size: 16px;
     }
 </style>
 ```
 
 </head>
 <body>
-    <div class="sparkles">
-        <div class="sparkle" style="left: 10%; top: 20%; animation-delay: 0s;"></div>
-        <div class="sparkle" style="left: 85%; top: 15%; animation-delay: 1s;"></div>
-        <div class="sparkle" style="left: 70%; top: 80%; animation-delay: 2s;"></div>
-        <div class="sparkle" style="left: 25%; top: 75%; animation-delay: 0.5s;"></div>
-        <div class="sparkle" style="left: 50%; top: 10%; animation-delay: 1.5s;"></div>
-        <div class="sparkle" style="left: 90%; top: 50%; animation-delay: 2.5s;"></div>
-        <div class="sparkle" style="left: 5%; top: 60%; animation-delay: 3s;"></div>
-        <div class="sparkle" style="left: 40%; top: 90%; animation-delay: 3.5s;"></div>
+    <div class="container">
+        <div class="magnifying-glass">🔍</div>
+        <h1>You Found Me!</h1>
+        <p class="sherlock">Elementary, my dear Watson... <span class="hat">🎩</span></p>
+        <p class="subtext">
+            Congratulations on your detective work! 🕵️<br><br>
+            Unfortunately, there's nothing else to see here.<br><br>
+            Move along now... nothing suspicious whatsoever. 👀
+        </p>
+        <p class="footer">🧐 Case closed.</p>
     </div>
-
-```
-<div class="container">
-    <div class="magnifying-glass">🔍</div>
-    <h1>You Found Me!</h1>
-    <p class="sherlock">Elementary, my dear Watson... <span class="hat">🎩</span></p>
-    <p class="subtext">
-        Congratulations on your detective work! 🕵️<br>
-        Unfortunately, there's nothing else to see here.<br>
-        Move along now... nothing suspicious whatsoever. 👀
-    </p>
-    <p class="footer">🧐 Case closed.</p>
-</div>
-```
-
 </body>
 </html>
