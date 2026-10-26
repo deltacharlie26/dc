@@ -1,0 +1,769 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UK Tide Predictor</title>
+<meta name="description" content="High and low water times, heights and spring or neap status for ports around the UK coast.">
+<style>
+  :root {
+    --shoal: #dcebee;      /* chart shallows: page background */
+    --land: #ece2c8;       /* chart land buff: masthead */
+    --panel: #f8fbfa;
+    --ink: #10293f;
+    --ink-soft: #3f5b70;
+    --line: #b6ccd3;
+    --water: #1b6e8c;
+    --water-fill: #bcdbe5;
+    --magenta: #a7155a;    /* chart magenta: high water, springs */
+    --neap: #5d8294;
+    --focus: #0b57d0;
+    --serif: "Palatino Linotype", Palatino, "Book Antiqua", "URW Palladio L", Georgia, serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--shoal); color: var(--ink);
+    font: 16px/1.5 var(--sans);
+  }
+  h1, h2, h3, p { margin: 0; }
+  button, input { font: inherit; color: inherit; }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+  .masthead { background: var(--land); border-bottom: 1px solid #cdbf98; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 16px; }
+  .masthead .wrap { padding-top: 28px; padding-bottom: 24px; }
+  h1 { font: italic 700 clamp(2rem, 6vw, 3rem)/1.05 var(--serif); letter-spacing: -0.01em; }
+  .masthead p { margin-top: 10px; max-width: 60ch; color: var(--ink-soft); }
+
+  main { padding: 20px 0 8px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+    padding: 18px; margin-bottom: 16px;
+  }
+  h2.sec, h3 { font: 700 1.05rem/1.3 var(--sans); margin-bottom: 10px; }
+
+  /* Pickers */
+  .field + .field { margin-top: 18px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    border: 1px solid var(--line); background: #fff; border-radius: 999px;
+    padding: 7px 14px; cursor: pointer; line-height: 1.2;
+  }
+  .chip:hover { border-color: var(--water); }
+  .chip[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .hint { margin-top: 8px; color: var(--ink-soft); font-size: 0.9rem; }
+  .search-row { display: flex; gap: 8px; }
+  .search-row input { flex: 1 1 auto; min-width: 0; border: 1px solid var(--line); background: #fff; border-radius: 6px; padding: 8px 12px; min-height: 42px; }
+  .search-row button { border: 1px solid var(--ink); background: var(--ink); color: #fff; border-radius: 6px; padding: 8px 18px; min-height: 42px; cursor: pointer; }
+  .search-row button:disabled { opacity: 0.6; cursor: progress; }
+  #results:not(:empty) { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .res-group + .res-group { margin-top: 14px; }
+  .res-title { font-weight: 600; margin-bottom: 6px; }
+  .res-sub { color: var(--ink-soft); font-size: 0.9rem; margin: 0 0 6px; }
+  .res-msg { color: var(--ink-soft); }
+  .res-msg.err { color: var(--magenta); font-weight: 600; }
+  .chip.small { padding: 6px 12px; font-size: 0.95rem; }
+  .chip .dist { color: var(--ink-soft); }
+  .chip[aria-pressed="true"] .dist { color: #cfe0e8; }
+
+  .datebar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .datebar button, .datebar input {
+    border: 1px solid var(--line); background: #fff; border-radius: 6px;
+    padding: 8px 12px; min-height: 42px;
+  }
+  .datebar button { cursor: pointer; min-width: 42px; }
+  .datebar button:hover { border-color: var(--water); }
+
+  /* Result header and chart */
+  .place { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 20px; }
+  .place h2 { font: italic 700 clamp(1.8rem, 5vw, 2.6rem)/1.1 var(--serif); }
+  .place .where { color: var(--ink-soft); }
+  .when { margin: 4px 0 6px; font-weight: 600; }
+  .chart-scroll { margin: 0 -4px; }
+  .chart-scroll svg { display: block; width: 100%; height: auto; }
+  .curve { fill: none; stroke: var(--water); stroke-width: 2.6; stroke-linejoin: round; stroke-linecap: round; }
+  .area { fill: var(--water-fill); opacity: 0.55; }
+  .grid-line { stroke: var(--line); stroke-width: 1; }
+  .axis-text { fill: var(--ink-soft); font: 11.5px var(--sans); }
+  .sounding-h { font: italic 700 17px var(--serif); fill: var(--ink); }
+  .sounding-t { font: 600 11.5px var(--sans); fill: var(--ink-soft); }
+  .sounding-h, .sounding-t, .now-text { paint-order: stroke; stroke: var(--panel); stroke-width: 4px; stroke-linejoin: round; }
+  .hw-dot { fill: var(--magenta); stroke: #fff; stroke-width: 2; }
+  .lw-dot { fill: #fff; stroke: var(--water); stroke-width: 3; }
+  .now-line { stroke: var(--ink); stroke-width: 1.5; stroke-dasharray: 4 4; }
+  .now-dot { fill: var(--ink); stroke: #fff; stroke-width: 2; }
+  @media (prefers-reduced-motion: no-preference) {
+    .curve { stroke-dasharray: var(--len); animation: draw 0.9s ease-out both; }
+    @keyframes draw { from { stroke-dashoffset: var(--len); } to { stroke-dashoffset: 0; } }
+  }
+
+  .cols { display: grid; grid-template-columns: 1fr; gap: 0 16px; }
+  @media (min-width: 760px) { .cols { grid-template-columns: 1fr 1fr; } }
+
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 9px 6px; border-bottom: 1px solid var(--line); }
+  th { font-weight: 600; color: var(--ink-soft); font-size: 0.9rem; }
+  td.num, th.num { text-align: right; }
+  td.time { font-weight: 700; font-size: 1.1rem; }
+  .tide-name { display: inline-flex; align-items: center; gap: 8px; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+  .dot.hw { background: var(--magenta); }
+  .dot.lw { background: #fff; border: 3px solid var(--water); }
+  .note { margin-top: 12px; color: var(--ink-soft); font-size: 0.88rem; }
+
+  /* Springs / neaps */
+  .verdict { font: italic 700 1.7rem/1.15 var(--serif); }
+  .verdict.spring { color: var(--magenta); }
+  .verdict.neap { color: var(--neap); }
+  .verdict.between { color: var(--water); }
+  .verdict-detail { margin-top: 4px; }
+  .gauge { margin: 18px 0 6px; }
+  .gauge-track { position: relative; height: 10px; border-radius: 5px;
+    background: linear-gradient(90deg, var(--neap), var(--water-fill) 50%, var(--magenta)); }
+  .gauge-mark { position: absolute; top: -6px; width: 6px; height: 22px; margin-left: -3px;
+    background: var(--ink); border: 2px solid #fff; border-radius: 3px; }
+  .gauge-ends { display: flex; justify-content: space-between; font-size: 0.88rem; color: var(--ink-soft); margin-top: 6px; }
+  dl.facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 16px 0 0; font-variant-numeric: tabular-nums; }
+  dl.facts dt { color: var(--ink-soft); }
+  dl.facts dd { margin: 0; font-weight: 600; text-align: right; }
+  .moon { display: flex; align-items: center; gap: 12px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .moon svg { flex: none; }
+
+  /* 14-day strip */
+  .strip { display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); gap: 2px; padding-bottom: 4px; }
+  .day { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px;
+    border: 1px solid transparent; background: transparent; border-radius: 6px; padding: 6px 0 6px; cursor: pointer; min-width: 0; }
+  .day:hover { border-color: var(--line); background: #fff; }
+  .day[aria-pressed="true"] { border-color: var(--ink); background: #fff; }
+  .bars { height: 96px; display: flex; align-items: flex-end; width: 100%; justify-content: center; }
+  .bar { width: 62%; min-height: 3px; border-radius: 3px 3px 0 0; background: var(--water); }
+  .q-spring .bar { background: var(--magenta); }
+  .q-neap .bar { background: var(--neap); }
+  .dow { font-size: 0.78rem; color: var(--ink-soft); }
+  .dom { font-weight: 700; font-size: 0.95rem; }
+  .moon-tag { font-size: 0.7rem; color: var(--ink-soft); height: 1em; line-height: 1; }
+  @media (max-width: 560px) { .dow { display: none; } .dom { font-size: 0.8rem; } .moon-tag { font-size: 0.62rem; } .bar { width: 70%; } }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: 0.88rem; color: var(--ink-soft); }
+  .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+
+  footer { padding: 4px 0 40px; color: var(--ink-soft); font-size: 0.88rem; }
+  footer p + p { margin-top: 10px; }
+  footer a { color: var(--ink); }
+  .warn { color: var(--ink); }
+  .err { color: var(--magenta); font-weight: 600; }
+</style>
+</head>
+<body>
+<header class="masthead">
+  <div class="wrap">
+    <h1>UK tide predictor</h1>
+    <p>Choose a stretch of coast, a port and a date. You get the times and heights of high and low water, and whether the tide is springs, neaps or somewhere in between.</p>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="card" aria-label="Choose a place and a date">
+    <div class="field">
+      <h2 class="sec" id="find-label">Find a port or place</h2>
+      <form class="search-row" id="search-form" role="search" autocomplete="off">
+        <input type="search" id="q" aria-labelledby="find-label" placeholder="Whitby, Padstow, Skegness, a postcode" enterkeyhint="search" maxlength="80">
+        <button type="submit" id="go">Search</button>
+      </form>
+      <p class="hint">Port names match as you type. For any other place, press Search to see the nearest ports.</p>
+      <div id="results" aria-live="polite"></div>
+    </div>
+    <div class="field">
+      <h2 class="sec" id="coast-label">Coast</h2>
+      <div class="chips" id="regions" role="group" aria-labelledby="coast-label"></div>
+      <p class="hint" id="region-hint"></p>
+    </div>
+    <div class="field">
+      <h2 class="sec" id="port-label">Port</h2>
+      <div class="chips" id="ports" role="group" aria-labelledby="port-label"></div>
+    </div>
+    <div class="field">
+      <h2 class="sec" id="date-label">Date</h2>
+      <div class="datebar" role="group" aria-labelledby="date-label">
+        <button type="button" id="prev" aria-label="Previous day">&#8249;</button>
+        <input type="date" id="date" aria-label="Date" min="2000-01-01" max="2050-12-31">
+        <button type="button" id="next" aria-label="Next day">&#8250;</button>
+        <button type="button" id="today">Today</button>
+      </div>
+    </div>
+  </section>
+
+  <div id="result" aria-live="polite"></div>
+</main>
+
+<footer class="wrap">
+  <p class="warn"><strong>Planning aid, not for navigation.</strong> These are the regular astronomical tides, worked out from harmonic constants fitted to tide gauge records. Wind, air pressure, swell and river flow are not included and can shift real high water by tens of minutes and heights by half a metre or more, especially in storms. Check the Admiralty EasyTide service or a local tide table before any trip where timing matters for safety.</p>
+  <p>Tide data: TICON-4 harmonic constants (Hart-Davis, Dettmering and Seitz, 2025, <a href="https://doi.org/10.17882/109129">doi:10.17882/109129</a>, licensed <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>), supplied through the <a href="https://github.com/openwatersio/tide-database">Neaps tide database</a>. Predictions use the Neaps tide predictor (MIT licence). Heights are metres above chart datum (lowest astronomical tide). Moon phase comes from a standard low-precision lunar series.</p>
+  <p>Place search uses <a href="https://nominatim.openstreetmap.org/">OpenStreetMap Nominatim</a> (&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>). Port names are matched in your browser; when you press Search, the text you typed is sent to Nominatim to find the place.</p>
+</footer>
+
+<script>(()=>{var r=Math.PI/180,R=180/Math.PI,A=(e,o=0,n=0,a=0,s=0)=>e+o/60+n/3600+a/(3600*1e3)+s/(3600*1e6),Q={terrestrialObliquity:[A(23,26,21.448),-A(0,0,4680.93),-A(0,0,1.55),A(0,0,1999.25),-A(0,0,51.38),-A(0,0,249.67),-A(0,0,39.05),A(0,0,7.12),A(0,0,27.87),A(0,0,5.79),A(0,0,2.45)].map((e,o)=>e*Math.pow(.01,o)),solarPerigee:[-77.06265000000002,1.7190199999968172,4591e-7,48e-8],solarLongitude:[280.46645,36000.76983,3032e-7],lunarInclination:[5.145],lunarLongitude:[218.3164591,481267.88134236,-.0013268,1/538841-1/65194e3],lunarNode:[125.044555,-1934.1361849,.0020762,1/467410,-1/60616e3],lunarPerigee:[83.353243,4069.0137111,-.0103238,-1/80053,1/18999e3]},we=(e,o)=>{let n=[];return e.forEach((a,s)=>{n.push(a*Math.pow(o,s))}),n.reduce((a,s)=>a+s)},Te=(e,o)=>{let n=[];return e.forEach((a,s)=>{n.push(a*s*Math.pow(o,s-1))}),n.reduce((a,s)=>a+s)},te=e=>(V(e)-2451545)/36525,V=e=>{let o=e.getUTCFullYear(),n=e.getUTCMonth()+1,a=e.getUTCDate()+e.getUTCHours()/24+e.getUTCMinutes()/1440+e.getUTCSeconds()/(1440*60)+e.getUTCMilliseconds()/(1440*60*1e3);n<=2&&(o=o-1,n=n+12);let s=Math.floor(o/100),l=2-s+Math.floor(s/4);return Math.floor(365.25*(o+4716))+Math.floor(30.6001*(n+1))+a+l-1524.5},Y=(e,o,n)=>{e=r*e,o=r*o,n=r*n;let a=Math.cos(o)*Math.cos(n)-Math.sin(o)*Math.sin(n)*Math.cos(e);return R*Math.acos(a)},Pe=(e,o,n)=>{e=r*e,o=r*o,n=r*n;let a=Math.cos(.5*(n-o))/Math.cos(.5*(n+o))*Math.tan(.5*e),s=Math.sin(.5*(n-o))/Math.sin(.5*(n+o))*Math.tan(.5*e);return a=Math.atan(a),s=Math.atan(s),a=a-.5*e,s=s-.5*e,-(a+s)*R},ee=(e,o,n)=>{e=r*e,o=r*o,n=r*n;let a=Math.cos(.5*(n-o))/Math.cos(.5*(n+o))*Math.tan(.5*e),s=Math.sin(.5*(n-o))/Math.sin(.5*(n+o))*Math.tan(.5*e);return a=Math.atan(a),s=Math.atan(s),a=a-.5*e,s=s-.5*e,(a-s)*R},Oe=(e,o,n)=>{let a=r*Y(e,o,n),s=r*ee(e,o,n);return R*Math.atan(Math.sin(2*a)*Math.sin(s)/(Math.sin(2*a)*Math.cos(s)+.3347))},Ae=(e,o,n)=>{let a=r*Y(e,o,n),s=r*ee(e,o,n),l=Math.sin(a)**2*Math.sin(2*s)/(Math.sin(a)**2*Math.cos(2*s)+.0727);return R*.5*Math.atan(l)},re=(e,o)=>(e%o+o)%o,ie=e=>{let o={},n={s:Q.lunarLongitude,h:Q.solarLongitude,p:Q.lunarPerigee,N:Q.lunarNode,pp:Q.solarPerigee,90:[90],omega:Q.terrestrialObliquity,i:Q.lunarInclination},a=1/(24*365.25*100);for(let i in n)o[i]={value:re(we(n[i],te(e)),360),speed:Te(n[i],te(e))*a};let s={I:Y,xi:Pe,nu:ee,nup:Oe,nupp:Ae};Object.keys(s).forEach(i=>{let t=s[i];o[i]={value:re(t(o.N.value,o.i.value,o.omega.value),360),speed:null}});let l={value:(V(e)-Math.floor(V(e)))*360,speed:15};return o["T+h-s"]={value:l.value+o.h.value-o.s.value,speed:l.speed+o.h.speed-o.s.speed},o.P={value:o.p.value-o.xi.value%360,speed:null},o},j={Mm:e=>Le(r*e.N.value,r*e.p.value),Mf:e=>Ie(r*e.N.value),O1:e=>ye(r*e.N.value),K1:e=>be(r*e.N.value),J1:e=>Ee(r*e.N.value),M1B:e=>He(r*e.N.value,r*e.p.value),M1C:e=>le(r*e.N.value,r*e.p.value),M1:e=>le(r*e.N.value,r*e.p.value),M1A:e=>Re(r*e.N.value,r*e.p.value),M2:e=>Ce(r*e.N.value),K2:e=>De(r*e.N.value),M3:e=>_e(r*e.N.value),L2:e=>Qe(r*e.N.value,r*e.p.value),gamma2:e=>ze(r*e.N.value,r*e.p.value),alpha2:e=>Ue(r*e.p.value,r*e.pp.value),delta2:e=>$e(r*e.N.value),xi2:e=>de(r*e.N.value),eta2:e=>de(r*e.N.value)};function Le(e,o){return{f:1-.1311*Math.cos(e)+.0538*Math.cos(2*o)+.0205*Math.cos(2*o-e),u:0}}function Ie(e){return{f:1.084+.415*Math.cos(e)+.039*Math.cos(2*e),u:-23.7*Math.sin(e)+2.7*Math.sin(2*e)-.4*Math.sin(3*e)}}function ye(e){return{f:1.0176+.1871*Math.cos(e)-.0147*Math.cos(2*e),u:10.8*Math.sin(e)-1.34*Math.sin(2*e)+.19*Math.sin(3*e)}}function be(e){return{f:1.006+.115*Math.cos(e)-.0088*Math.cos(2*e)+6e-4*Math.cos(3*e),u:-8.86*Math.sin(e)+.68*Math.sin(2*e)-.07*Math.sin(3*e)}}function Ee(e){return{f:1.1029+.1676*Math.cos(e)-.017*Math.cos(2*e)+.0016*Math.cos(3*e),u:-12.94*Math.sin(e)+1.34*Math.sin(2*e)-.19*Math.sin(3*e)}}function Ce(e){return{f:1.0007-.0373*Math.cos(e)+2e-4*Math.cos(2*e),u:-2.14*Math.sin(e)}}function De(e){return{f:1.0246+.2863*Math.cos(e)+.0083*Math.cos(2*e)-.0015*Math.cos(3*e),u:-17.74*Math.sin(e)+.68*Math.sin(2*e)-.04*Math.sin(3*e)}}function _e(e){let o=Ce(e);return{f:Math.pow(Math.sqrt(o.f),3),u:-3.21*Math.sin(e)}}function He(e,o){return z(2.783*Math.sin(2*o)+.558*Math.sin(2*o-e)+.184*Math.sin(e),1+2.783*Math.cos(2*o)+.558*Math.cos(2*o-e)+.184*Math.cos(e))}function le(e,o){return z(Math.sin(o)+.2*Math.sin(o-e),2*(Math.cos(o)+.2*Math.cos(o-e)))}function Re(e,o){return z(-.3593*Math.sin(2*o)-.2*Math.sin(e)-.066*Math.sin(2*o-e),1+.3593*Math.cos(2*o)+.2*Math.cos(e)+.066*Math.cos(2*o-e))}function ze(e,o){return z(.147*Math.sin(2*(e-o)),1+.147*Math.cos(2*(e-o)))}function Ue(e,o){return z(-.0446*Math.sin(e-o),1-.0446*Math.cos(e-o))}function $e(e){return z(.477*Math.sin(e),1-.477*Math.cos(e))}function de(e){return z(-.439*Math.sin(e),1+.439*Math.cos(e))}function Qe(e,o){return z(-.2505*Math.sin(2*o)-.1102*Math.sin(2*o-e)-.0156*Math.sin(2*o-2*e)-.037*Math.sin(e),1-.2505*Math.cos(2*o)-.1102*Math.cos(2*o-e)-.0156*Math.cos(2*o-2*e)-.037*Math.cos(e))}function z(e,o){return{f:Math.sqrt(e*e+o*o),u:R*Math.atan2(e,o)}}var Fe={Mm:e=>({f:Be(e),u:0}),Mf:e=>({f:Je(e),u:Xe(e)}),O1:e=>({f:he(e),u:Ye(e)}),K1:e=>({f:qe(e),u:no(e)}),J1:e=>({f:je(e),u:eo(e)}),OO1:e=>({f:We(e),u:oo(e)}),M2:e=>({f:oe(e),u:fe(e)}),K2:e=>({f:Ge(e),u:so(e)}),L2:e=>({f:ke(e),u:ao(e)}),M1:e=>({f:Ze(e),u:to(e)}),M3:e=>({f:Ve(e,3),u:ro(e,3)})};function Be(e){let o=r*e.omega.value,n=r*e.i.value,a=r*e.I.value,s=(2/3-Math.pow(Math.sin(o),2))*(1-3/2*Math.pow(Math.sin(n),2));return(2/3-Math.pow(Math.sin(a),2))/s}function Je(e){let o=r*e.omega.value,n=r*e.i.value,a=r*e.I.value,s=Math.pow(Math.sin(o),2)*Math.pow(Math.cos(.5*n),4);return Math.pow(Math.sin(a),2)/s}function he(e){let o=r*e.omega.value,n=r*e.i.value,a=r*e.I.value,s=Math.sin(o)*Math.pow(Math.cos(.5*o),2)*Math.pow(Math.cos(.5*n),4);return Math.sin(a)*Math.pow(Math.cos(.5*a),2)/s}function je(e){let o=r*e.omega.value,n=r*e.i.value,a=r*e.I.value,s=Math.sin(2*o)*(1-3/2*Math.pow(Math.sin(n),2));return Math.sin(2*a)/s}function We(e){let o=r*e.omega.value,n=r*e.i.value,a=r*e.I.value,s=Math.sin(o)*Math.pow(Math.sin(.5*o),2)*Math.pow(Math.cos(.5*n),4);return Math.sin(a)*Math.pow(Math.sin(.5*a),2)/s}function oe(e){let o=r*e.omega.value,n=r*e.i.value,a=r*e.I.value,s=Math.pow(Math.cos(.5*o),4)*Math.pow(Math.cos(.5*n),4);return Math.pow(Math.cos(.5*a),4)/s}function qe(e){let o=r*e.omega.value,n=r*e.i.value,a=r*e.I.value,s=r*e.nu.value,l=.5023*(Math.sin(2*o)*(1-3/2*Math.pow(Math.sin(n),2)))+.1681;return Math.pow(.2523*Math.pow(Math.sin(2*a),2)+.1689*Math.sin(2*a)*Math.cos(s)+.0283,.5)/l}function ke(e){let o=r*e.P.value,n=r*e.I.value,a=Math.pow(1-12*Math.pow(Math.tan(.5*n),2)*Math.cos(2*o)+36*Math.pow(Math.tan(.5*n),4),.5);return oe(e)*a}function Ge(e){let o=r*e.omega.value,n=r*e.i.value,a=r*e.I.value,s=r*e.nu.value,l=.5023*(Math.sin(o)**2*(1-3/2*Math.sin(n)**2))+.0365;return Math.pow(.2523*Math.pow(Math.sin(a),4)+.0367*Math.pow(Math.sin(a),2)*Math.cos(2*s)+.0013,.5)/l}function Ze(e){let o=r*e.P.value,n=r*e.I.value,a=Math.pow(.25+1.5*Math.cos(n)*Math.cos(2*o)*Math.pow(Math.cos(.5*n),-.5)+2.25*Math.pow(Math.cos(n),2)*Math.pow(Math.cos(.5*n),-4),.5);return he(e)*a}function Ve(e,o){return Math.pow(oe(e),o/2)}function Xe(e){return-2*e.xi.value}function Ye(e){return 2*e.xi.value-e.nu.value}function eo(e){return-e.nu.value}function oo(e){return-2*e.xi.value-e.nu.value}function fe(e){return 2*e.xi.value-2*e.nu.value}function no(e){return-e.nup.value}function ao(e){let o=r*e.I.value,n=r*e.P.value,a=R*Math.atan(Math.sin(2*n)/(1/6*Math.pow(Math.tan(.5*o),-2)-Math.cos(2*n)));return 2*e.xi.value-2*e.nu.value-a}function so(e){return-2*e.nupp.value}function to(e){let o=r*e.I.value,n=r*e.P.value,a=R*Math.atan((5*Math.cos(o)-1)/(7*Math.cos(o)+1)*Math.tan(n));return e.xi.value-e.nu.value+a}function ro(e,o){return o/2*fe(e)}var io={iho:j,schureman:Fe};function lo(e){if(!e)return j;let o=io[e];if(!o)throw new Error(`Unknown fundamentals: ${e}`);return o}var co=1/3600;function X(e,o){let n=0;for(let a=0;a<o.length;a++){let{A:s,w:l,phi:i}=o[a];n+=s*Math.cos(l*e+i)}return n}function k(e,o){let n=0;for(let a=0;a<o.length;a++){let{A:s,w:l,phi:i}=o[a];n-=s*l*Math.sin(l*e+i)}return n}function xo(e,o){let n=0;for(let a=0;a<o.length;a++){let{A:s,w:l,phi:i}=o[a];n-=s*l*l*Math.cos(l*e+i)}return n}function mo(e,o,n,a){for(;;){let s=(e+o)/2;if(o-e<co)return s;let l=k(s,a);if(l===0)return s;(n>0?l>0:l<0)?(e=s,n=l):o=s}}function ce(e,o,{startMs:n,isDoubleTide:a,prominenceThreshold:s,getParams:l}){let i=[],t=l(Math.max(0,e));if(t.length===0)return i;let d=0;for(let{w:f}of t)f>d&&(d=f);if(d===0)return i;let c=Math.PI/15,p=2*Math.PI,u=0,h=0;for(let{A:f,w:C}of t)C>=c&&C<=p&&f>u&&(u=f,h=C);h===0&&(h=d);let T=a?0:Math.PI/(1.85*h),L=Math.PI/(2*d),P=e,I=k(P,t);for(let f=P+L;f<=o+L;f+=L){let C=l(P);C!==t&&(t=C,I=k(P,t));let E=Math.min(f,o),y=k(E,t);if(I!==0&&y!==0&&(I>0?y<0:y>0)){let w=mo(P,E,I,t);if(w>=e&&w<=o){let D=xo(w,t)<0;i.push({time:new Date(n+w*60*60*1e3),level:X(w,t),high:D,low:!D,label:D?"High":"Low"})}}if(E>=o)break;P=E,I=y}let b=i.length;if(b>2){let E=function(m){let x=f[m],M=C[m];if(x<0||M>=b)return{prom:1/0,offending:!1};let S=Math.abs(i[m].level-i[x].level),K=Math.abs(i[M].level-i[m].level),_=Math.min(S,K),F=(i[m].time.getTime()-i[x].time.getTime())/36e5,H=(i[M].time.getTime()-i[m].time.getTime())/36e5,U=T>0&&(F<T&&i[m].high===i[x].high||H<T&&i[m].high===i[M].high);return{prom:_,offending:_<s||U}},y=function(){let m=-1,x=1/0;for(let M=C[0];C[M]<b;M=C[M]){let{prom:S,offending:K}=E(M);K&&S<x&&(x=S,m=M)}return{idx:m,prom:x}},f=new Int32Array(b),C=new Int32Array(b);for(let m=0;m<b;m++)f[m]=m-1,C[m]=m+1;let w=y();for(;w.idx!==-1;){let m=f[w.idx],x=C[w.idx];C[m]=x,f[x]=m,w=y()}let D=[];for(let m=0;m<b;m=C[m])D.push(i[m]);return D}return i}function Se(e,o){var n,a,s,l;return(l=e?(n=o==null?void 0:o.height)==null?void 0:n.high:(a=o==null?void 0:o.height)==null?void 0:a.low)!=null?l:((s=o==null?void 0:o.height)==null?void 0:s.type)==="fixed"?0:1}function uo(e,o){var a,s,l;if(typeof o=="undefined"||!o)return e;let n=Se(e.high,o);return((a=o.height)==null?void 0:a.type)==="fixed"?e.level+=n:e.level*=n,e.high&&((s=o.time)!=null&&s.high)&&(e.time=new Date(e.time.getTime()+o.time.high*60*1e3)),e.low&&((l=o.time)!=null&&l.low)&&(e.time=new Date(e.time.getTime()+o.time.low*60*1e3)),e}function Mo(e,o){return typeof o!="undefined"&&typeof o[e]!="undefined"?o[e]:{high:"High",low:"Low"}[e]}var W=24;function xe(e,o,n){return o+e*(n-o)}function po({timeline:e,constituents:o,constituentModels:n,start:a,fundamentals:s=j,prominenceThreshold:l=.01}){var C,E,y,w,D,m;let i=ie(a),t=a.getTime(),d=(e.items[e.items.length-1].getTime()-t)/36e5,c=(E=(C=o.find(x=>x.name==="M2"))==null?void 0:C.amplitude)!=null?E:0,p=(w=(y=o.find(x=>x.name==="M4"))==null?void 0:y.amplitude)!=null?w:0,u=(m=(D=o.find(x=>x.name==="MS4"))==null?void 0:D.amplitude)!=null?m:0,h=c>0&&(p+u)/c>.25;function T(x){let M=ie(x),S=[];for(let K of o){if(K.amplitude===0)continue;let _=n[K.name];if(!_)continue;let F=r*_.value(i),H=r*_.speed,U=_.correction(M,s);S.push({A:K.amplitude*U.f,w:H,phi:F+r*U.u-K.phase})}return S}function L(){let x=T(new Date(t+Math.min(W,d)/2*36e5)),M=W;return S=>{if(S>=M){let K=Math.min(M+W,d);x=T(new Date(t+(M+K)/2*36e5)),M+=W}return x}}let P={startMs:t,isDoubleTide:h,prominenceThreshold:l};function I({labels:x,offsets:M}={}){return ce(0,d,{...P,getParams:L()}).map(S=>(x&&(S.label=Mo(S.high?"high":"low",x)),uo(S,M)))}let b=36;function f({offsets:x}={}){var U;if(!x){let v=L(),$=[];for(let N=0;N<e.items.length;N++){let O=e.hours[N];$.push({time:e.items[N],hour:O,level:X(O,v(O))})}return $}let M=ce(-36,d+b,{...P,getParams:L()});if(M.length<2)throw new Error("At least two extremes are required for interpolation with offsets");let S=((U=x.height)==null?void 0:U.type)==="fixed",K=M.map(v=>{var O,B,J;let $=(J=v.high?(O=x.time)==null?void 0:O.high:(B=x.time)==null?void 0:B.low)!=null?J:0,N=Se(v.high,x);return{subTime:v.time.getTime()+$*60*1e3,refTime:v.time.getTime(),refLevel:v.level,subLevel:S?v.level+N:v.level*N}}),_=L(),F=[],H=0;for(let v=0;v<e.items.length;v++){let $=e.items[v].getTime();for(;H<K.length-2&&K[H+1].subTime<$;)H++;let N=K[H],O=K[H+1],B=O.subTime-N.subTime,J=B>0?Math.max(0,Math.min(1,($-N.subTime)/B)):0,ae=(xe(J,N.refTime,O.refTime)-t)/36e5,ge=X(ae,_(ae)),se=O.refLevel-N.refLevel,Ne=xe(se!==0?(ge-N.refLevel)/se:J,N.subLevel,O.subLevel);F.push({time:e.items[v],hour:e.hours[v],level:Ne})}return F}return Object.freeze({getExtremesPrediction:I,getTimelinePrediction:f})}var Ke={M:{species:2},S:{species:2},N:{species:2},O:{species:1},P:{species:1},Q:{species:1},J:{species:1},T:{species:2},R:{species:2},L:{species:2},nu:{species:2},lambda:{species:2}},Co={species:1},me={species:2};function ho(e){let o=d=>new Error(`Unable to parse compound constituent "${e}": ${d}`),n=e;(e.startsWith("MA")||e.startsWith("MB"))&&e.length>2&&(n="M"+e.substring(2));let a=n.match(/^(.+?)(\d+)$/);if(!a)throw o("no trailing species digits");let s=a[1],l=parseInt(a[2],10);if(l===0)throw o("species is 0");let i=[],t=0;for(;t<s.length;){let d=0;for(;t<s.length&&s[t]>="0"&&s[t]<="9";)d=d*10+(s.charCodeAt(t)-48),t++;if(d===0&&(d=1),t>=s.length)throw o("trailing digits with no letter");if(s[t]==="("){t++;let p=[];for(;t<s.length&&s[t]!==")";){let u=ue(s,t);if(!u)throw o(`unrecognized character at position ${t}`);p.push(u),t+=u.length}if(t>=s.length||s[t]!==")")throw o("unclosed parenthesized group");if(t++,p.length===0)throw o("empty parenthesized group");for(let u of p){if(!Me(u))throw o(`unknown letter "${u}"`);i.push({letter:u,multiplier:d})}continue}let c=ue(s,t);if(!c)throw o(`unrecognized character at position ${t}`);if(!Me(c))throw o(`unknown letter "${c}"`);t+=c.length,i.push({letter:c,multiplier:d})}return{tokens:i,targetSpecies:l}}function ue(e,o){if(e.startsWith("nu",o)&&(o+2>=e.length||!fo(e[o+2])))return"nu";if(e.startsWith("lambda",o))return"lambda";let n=e[o];return n>="A"&&n<="Z"?n:null}function fo(e){return e>="a"&&e<="z"}function Me(e){return e==="A"||e==="B"?!1:e==="K"||e in Ke}function So(e,o){if(e.some(n=>n.letter==="K")){let n=G(e,o,me);return n||G(e,o,Co)}return G(e,o,me)}function G(e,o,n){let a=e.map(t=>t.letter==="K"?n:Ke[t.letter]),s=t=>e[t].letter+a[t].species;if(e.length===1){let t=a[0].species;if(t>0&&o>t)return[{constituentKey:s(0),factor:o/t}];if(t===o)return[{constituentKey:s(0),factor:1}]}let l=new Array(e.length).fill(1),i=0;for(let t=0;t<e.length;t++)i+=e[t].multiplier*a[t].species;for(let t=e.length-1;t>=0&&i!==o;t--)l[t]=-1,i-=2*e[t].multiplier*a[t].species;return i!==o?null:e.map((t,d)=>({constituentKey:s(d),factor:l[d]*t.multiplier}))}function q(e,o,n){let a;try{a=ho(e)}catch{return null}let s=o>0?o:a.targetSpecies,l=So(a.tokens,s);if(!l)return null;let i=[];for(let{constituentKey:t,factor:d}of l){let c=n[t];if(!c)return null;i.push({constituent:c,factor:d})}return i.length>0?i:null}var g={};function Ko({name:e,speed:o,xdo:n,aliases:a=[],members:s,nodalCorrection:l}){let i=n?vo(n):null,t=null,d={name:e,speed:o,aliases:a,coefficients:i,get members(){var c,p;return t||(s?t=s.map(([u,h])=>({constituent:g[u],factor:h})):t=(p=No(l,e,(c=n==null?void 0:n[0])!=null?c:0))!=null?p:[]),t},value(c){if(i)return go(i,c);let p=0;for(let{constituent:u,factor:h}of d.members)p+=u.value(c)*h;return p},correction(c,p=j){let u=p[e];if(u)return u(c);let h=1,T=0;for(let{constituent:L,factor:P}of d.members){let I=L.correction(c,p);T+=P*I.u,h*=Math.pow(I.f,Math.abs(P))}return{u:T,f:h}}};return[d.name,...a].forEach(c=>{g[c]=d}),d}function vo(e){return[e[0],e[1]-5,e[2]-5,e[3]-5,e[4]-5,e[5]-5,5-e[6]]}function go(e,o){let n=[o["T+h-s"].value,o.s.value,o.h.value,o.p.value,-o.N.value,o.pp.value,90],a=0;for(let s=0;s<7;s++)a+=e[s]*n[s];return a}function No(e,o,n){switch(e){case"z":case"f":return null;case"y":return null;case"a":return[{constituent:g.Mm,factor:1}];case"m":return[{constituent:g.M2,factor:1}];case"o":return[{constituent:g.O1,factor:1}];case"k":return[{constituent:g.K1,factor:1}];case"j":return[{constituent:g.J1,factor:1}];case"b":return[{constituent:g.M2,factor:-1}];case"c":return[{constituent:g.M2,factor:-2}];case"g":return[{constituent:g.M2,factor:n/2}];case"p":return q("2MN2",n,g);case"d":return q("KQ1",n,g);case"q":return q("NKM2",n,g);case"x":return q(o,n,g)}}for(let e of[{name:"Zo",speed:0,xdo:[0,5,5,5,5,5,5],nodalCorrection:"z",aliases:["Z0"]},{name:"Sa",speed:.0410686,xdo:[0,5,6,5,5,5,5],nodalCorrection:"z",aliases:["SA"]},{name:"Ssa",speed:.0821373,xdo:[0,5,7,5,5,5,5],nodalCorrection:"z",aliases:["SSA"]},{name:"Sta",speed:.1232039,xdo:[0,5,8,5,5,4,4],nodalCorrection:"x",aliases:[],members:[["K2",1],["T2",-1]]},{name:"MSm",speed:.4715211,xdo:[0,6,3,6,5,5,5],nodalCorrection:"x",aliases:[],members:[["M2",1],["nu2",-1]]},{name:"Mnum",speed:.4715211,xdo:[0,6,3,6,5,5,5],nodalCorrection:"x",aliases:["M\u03BDm"],members:[["M2",1],["nu2",-1]]},{name:"Mm",speed:.5443747,xdo:[0,6,5,4,5,5,5],nodalCorrection:"y",aliases:["MM"]},{name:"MSf",speed:1.0158958,xdo:[0,7,3,5,5,5,5],nodalCorrection:"b",aliases:["MSF"]},{name:"MSo",speed:1.0158958,xdo:[0,7,3,5,5,5,5],nodalCorrection:"b",aliases:["MSO"]},{name:"SM",speed:1.0158958,xdo:[0,7,3,5,5,5,5],nodalCorrection:"x",aliases:[],members:[["S2",1],["M2",-1]]},{name:"Mf",speed:1.098033,xdo:[0,7,5,5,5,5,5],nodalCorrection:"y",aliases:["MF"]},{name:"KOo",speed:1.098033,xdo:[0,7,5,5,5,5,5],nodalCorrection:"x",aliases:[],members:[["K1",1],["O1",-1]]},{name:"MKo",speed:1.098033,xdo:[0,7,5,5,5,5,5],nodalCorrection:"x",aliases:[],members:[["K2",1],["M2",-1]]},{name:"Snu2",speed:1.4874168,xdo:[0,8,1,6,5,5,5],nodalCorrection:"x",aliases:["S\u03BD2"]},{name:"SN",speed:1.5602705,xdo:[0,8,3,4,5,5,5],nodalCorrection:"x",aliases:[],members:[["S2",1],["N2",-1]]},{name:"MStm",speed:1.5695541,xdo:[0,8,3,6,5,5,5],nodalCorrection:"x",aliases:["MSTM"],members:[["Mf",1],["M2",1],["nu2",-1]]},{name:"Mfm",speed:1.6424078,xdo:[0,8,5,4,5,5,5],nodalCorrection:"a",aliases:["MFM","MTM"]},{name:"2SM",speed:2.0317915,xdo:[0,9,1,5,5,5,5],nodalCorrection:"c",aliases:[]},{name:"MSqm",speed:2.1139287,xdo:[0,9,3,5,5,5,5],nodalCorrection:"b",aliases:["MSQM"]},{name:"Mqm",speed:2.1867829,xdo:[0,9,5,3,5,5,5],nodalCorrection:"m",aliases:["MQM"]},{name:"2SMN",speed:2.5761662,xdo:null,nodalCorrection:"x",aliases:[],members:[["S2",2],["M2",-1],["N2",-1]]},{name:"NJ1",speed:12.854286,xdo:[1,2,5,7,5,5,4],nodalCorrection:"x",aliases:[]},{name:"2Q1",speed:12.8542862,xdo:[1,2,5,7,5,5,4],nodalCorrection:"o",aliases:[]},{name:"nuJ1",speed:12.9271398,xdo:[1,2,7,5,5,5,4],nodalCorrection:"o",aliases:["\u03BDJ1"]},{name:"sigma1",speed:12.9271398,xdo:[1,2,7,5,5,5,4],nodalCorrection:"o",aliases:["\u03C31","SGM","SIGMA1"]},{name:"NK1",speed:13.39866,xdo:[1,3,5,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"Q1",speed:13.3986609,xdo:[1,3,5,6,5,5,4],nodalCorrection:"o",aliases:[]},{name:"rho1",speed:13.4715145,xdo:[1,3,7,4,5,5,4],nodalCorrection:"o",aliases:["\u03C11","RHO","RHO1"]},{name:"nuK1",speed:13.4715146,xdo:[1,3,7,4,5,5,4],nodalCorrection:"x",aliases:["\u03BDK1"]},{name:"O1",speed:13.9430356,xdo:[1,4,5,5,5,5,4],nodalCorrection:"y",aliases:[]},{name:"MK1",speed:13.9430356,xdo:[1,4,5,5,5,5,4],nodalCorrection:"x",aliases:[]},{name:"MS1",speed:13.9841042,xdo:[1,4,6,5,5,5,7],nodalCorrection:"x",aliases:[]},{name:"MP1",speed:14.0251729,xdo:[1,4,7,5,5,5,5],nodalCorrection:"m",aliases:[]},{name:"tau1",speed:14.0251729,xdo:[1,4,7,5,5,5,6],nodalCorrection:"k",aliases:["\u03C41","TAU1"]},{name:"M1B",speed:14.4874103,xdo:[1,5,5,4,5,5,6],nodalCorrection:"y",aliases:[]},{name:"M1C",speed:14.492052,xdo:[1,5,5,5,5,5,5],nodalCorrection:"y",aliases:[]},{name:"M1",speed:14.4966939,xdo:[1,5,5,6,5,5,6],nodalCorrection:"y",aliases:[]},{name:"NO1",speed:14.4966939,xdo:[1,5,5,6,5,5,6],nodalCorrection:"x",aliases:[]},{name:"M1A",speed:14.496694,xdo:[1,5,5,6,5,5,6],nodalCorrection:"y",aliases:[]},{name:"LP1",speed:14.5695476,xdo:[1,5,7,4,5,5,4],nodalCorrection:"x",aliases:[]},{name:"chi1",speed:14.5695476,xdo:[1,5,7,4,5,5,6],nodalCorrection:"j",aliases:["\u03C71","CHI1"]},{name:"pi1",speed:14.9178647,xdo:[1,6,2,5,5,6,4],nodalCorrection:"z",aliases:["\u03C01","PI1"]},{name:"TK1",speed:14.9178647,xdo:[1,6,2,5,5,6,4],nodalCorrection:"x",aliases:[]},{name:"SK1",speed:14.958931,xdo:[1,6,3,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"P1",speed:14.9589314,xdo:[1,6,3,5,5,5,4],nodalCorrection:"z",aliases:[]},{name:"S1",speed:15,xdo:[1,6,4,5,5,5,5],nodalCorrection:"z",aliases:[]},{name:"SP1",speed:15.0410686,xdo:[1,6,5,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"K1",speed:15.0410686,xdo:[1,6,5,5,5,5,6],nodalCorrection:"y",aliases:[]},{name:"MO1",speed:15.0410686,xdo:[1,6,5,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"RP1",speed:15.0821353,xdo:[1,6,6,5,5,4,4],nodalCorrection:"x",aliases:[]},{name:"psi1",speed:15.0821353,xdo:[1,6,6,5,5,4,6],nodalCorrection:"z",aliases:["\u03C81","PSI1"]},{name:"KP1",speed:15.1232059,xdo:[1,6,7,5,5,5,6],nodalCorrection:"x",aliases:[]},{name:"phi1",speed:15.123206,xdo:[1,6,7,5,5,5,6],nodalCorrection:"j",aliases:["\u03C61","PHI1"]},{name:"lambdaO1",speed:15.5125897,xdo:[1,7,3,6,5,5,4],nodalCorrection:"x",aliases:["\u03BBO1"]},{name:"theta1",speed:15.5125897,xdo:[1,7,3,6,5,5,6],nodalCorrection:"j",aliases:["\u03B81","THETA1"]},{name:"J1",speed:15.5854433,xdo:[1,7,5,4,5,5,6],nodalCorrection:"y",aliases:[]},{name:"MQ1",speed:15.5854434,xdo:[1,7,5,4,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2PO1",speed:15.9748271,xdo:[1,8,1,5,5,5,4],nodalCorrection:"x",aliases:[]},{name:"SO1",speed:16.0569644,xdo:[1,8,3,5,5,5,6],nodalCorrection:"x",aliases:[]},{name:"OO1",speed:16.1391017,xdo:[1,8,5,5,5,5,6],nodalCorrection:"d",aliases:[]},{name:"ups1",speed:16.6834764,xdo:[1,9,5,4,5,5,6],nodalCorrection:"d",aliases:["\u03C51","UPS1"]},{name:"KQ1",speed:16.6834764,xdo:[1,9,5,4,5,5,6],nodalCorrection:"x",aliases:[]},{name:"2MN2S2",speed:26.407938,xdo:[2,0,9,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"3M(SK)2",speed:26.8701754,xdo:[2,1,7,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"3MKS2",speed:26.8701754,xdo:[2,1,7,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2NS2",speed:26.8794591,xdo:[2,1,7,7,5,5,5],nodalCorrection:"x",aliases:[]},{name:"3MS2",speed:26.9523127,xdo:[2,1,9,5,5,5,5],nodalCorrection:"x",aliases:["MLN2S2"]},{name:"3M2S2",speed:26.952313,xdo:[2,1,9,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2NK2S2",speed:26.9615964,xdo:[2,1,9,7,5,5,5],nodalCorrection:"x",aliases:[]},{name:"OQ2",speed:27.3416965,xdo:[2,2,5,6,5,5,7],nodalCorrection:"x",aliases:["OO2"]},{name:"MNK2",speed:27.3416965,xdo:[2,2,5,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"MNS2",speed:27.4238338,xdo:[2,2,7,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"eps2",speed:27.4238338,xdo:[2,2,7,6,5,5,5],nodalCorrection:"m",aliases:["\u03B52","EP2"]},{name:"MnuS2",speed:27.4966874,xdo:[2,2,9,4,5,5,5],nodalCorrection:"x",aliases:["M\u03BDS2"]},{name:"2ML2S2",speed:27.4966874,xdo:[2,2,9,4,5,5,7],nodalCorrection:"x",aliases:[]},{name:"MNK2S2",speed:27.505971,xdo:[2,2,9,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2MS2K2",speed:27.8039339,xdo:[2,3,3,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2MK2",speed:27.8860712,xdo:[2,3,5,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"O2",speed:27.8860712,xdo:[2,3,5,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"NLK2",speed:27.8860712,xdo:[2,3,5,5,5,5,7],nodalCorrection:"x",aliases:[]},{name:"2N2",speed:27.8953548,xdo:[2,3,5,7,5,5,5],nodalCorrection:"m",aliases:[]},{name:"mu2",speed:27.9682085,xdo:[2,3,7,5,5,5,5],nodalCorrection:"m",aliases:["\u03BC2","MU2"]},{name:"2MS2",speed:27.9682085,xdo:[2,3,7,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"SNK2",speed:28.3575923,xdo:[2,4,3,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"NA2",speed:28.3986629,xdo:[2,4,4,6,5,5,5],nodalCorrection:"f",aliases:[]},{name:"N2",speed:28.4397295,xdo:[2,4,5,6,5,5,5],nodalCorrection:"m",aliases:[]},{name:"KQ2",speed:28.4397295,xdo:[2,4,5,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"NB2",speed:28.4807962,xdo:[2,4,6,6,5,4,5],nodalCorrection:"f",aliases:[]},{name:"NA2*",speed:28.480798,xdo:[2,4,6,6,5,5,5],nodalCorrection:"f",aliases:[]},{name:"nu2",speed:28.5125832,xdo:[2,4,7,4,5,5,5],nodalCorrection:"m",aliases:["\u03BD2","NU2"]},{name:"MKL2S2",speed:28.5947204,xdo:[2,4,9,4,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2KN2S2",speed:28.6040041,xdo:[2,4,9,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"MSK2",speed:28.901967,xdo:[2,5,3,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"OP2",speed:28.901967,xdo:[2,5,3,5,5,5,7],nodalCorrection:"x",aliases:[]},{name:"gamma2",speed:28.9112506,xdo:[2,5,3,7,5,5,7],nodalCorrection:"y",aliases:["\u03B32","GAMMA2"]},{name:"MPS2",speed:28.9430356,xdo:[2,5,4,5,5,5,6],nodalCorrection:"x",aliases:[]},{name:"M(SK)2",speed:28.9430356,xdo:[2,5,4,5,5,6,7],nodalCorrection:"x",aliases:[]},{name:"MA2",speed:28.943036,xdo:[2,5,4,5,5,5,5],nodalCorrection:"f",aliases:[]},{name:"alpha2",speed:28.9430376,xdo:[2,5,4,5,5,6,7],nodalCorrection:"y",aliases:["\u03B12","ALPHA2"]},{name:"M2",speed:28.9841042,xdo:[2,5,5,5,5,5,5],nodalCorrection:"y",aliases:[]},{name:"KO2",speed:28.9841042,xdo:[2,5,5,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"MSP2",speed:29.0251729,xdo:[2,5,6,5,5,5,4],nodalCorrection:"x",aliases:[]},{name:"MB2",speed:29.025173,xdo:[2,5,6,5,5,5,5],nodalCorrection:"f",aliases:[]},{name:"MA2*",speed:29.025173,xdo:[2,5,6,5,5,5,5],nodalCorrection:"f",aliases:[]},{name:"M(KS)2",speed:29.0251788,xdo:[2,5,6,5,5,4,5],nodalCorrection:"x",aliases:[]},{name:"MKS2",speed:29.0662415,xdo:[2,5,7,5,5,5,5],nodalCorrection:"x",aliases:["3N2"]},{name:"delta2",speed:29.066242,xdo:[2,5,7,5,5,5,5],nodalCorrection:"y",aliases:["\u03B42","DELTA2"]},{name:"M2(KS)2",speed:29.148378,xdo:[2,5,9,5,5,5,5],nodalCorrection:"x",aliases:["M2KS2"]},{name:"2KM2S2",speed:29.1483788,xdo:[2,5,9,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2SN(MK)2",speed:29.373488,xdo:[2,6,1,6,5,5,5],nodalCorrection:"x",aliases:["2SNMK2"]},{name:"lambda2",speed:29.4556253,xdo:[2,6,3,6,5,5,7],nodalCorrection:"m",aliases:["\u03BB2","LAM2","LAMBDA2"]},{name:"L2",speed:29.5284789,xdo:[2,6,5,4,5,5,7],nodalCorrection:"y",aliases:[]},{name:"2MN2",speed:29.528479,xdo:[2,6,5,4,5,5,7],nodalCorrection:"x",aliases:[]},{name:"L2A",speed:29.528479,xdo:[2,6,5,4,5,5,7],nodalCorrection:"p",aliases:[]},{name:"3L2",speed:29.5331208,xdo:[2,6,5,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"NKM2",speed:29.5377626,xdo:[2,6,5,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"L2B",speed:29.537763,xdo:[2,6,5,6,5,5,5],nodalCorrection:"q",aliases:[]},{name:"2SK2",speed:29.9178627,xdo:[2,7,1,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"T2",speed:29.9589333,xdo:[2,7,2,5,5,6,5],nodalCorrection:"z",aliases:[]},{name:"S2",speed:30,xdo:[2,7,3,5,5,5,5],nodalCorrection:"z",aliases:[]},{name:"KP2",speed:30,xdo:[2,7,3,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"R2",speed:30.0410667,xdo:[2,7,4,5,5,4,7],nodalCorrection:"z",aliases:[]},{name:"K2",speed:30.0821373,xdo:[2,7,5,5,5,5,5],nodalCorrection:"y",aliases:[]},{name:"MSnu2",speed:30.4715211,xdo:[2,8,1,6,5,5,5],nodalCorrection:"x",aliases:["MS\u03BD2"]},{name:"MSN2",speed:30.5443747,xdo:[2,8,3,4,5,5,5],nodalCorrection:"x",aliases:[]},{name:"xi2",speed:30.5536583,xdo:[2,8,3,6,5,5,5],nodalCorrection:"y",aliases:["\u03BE2","XI2"]},{name:"eta2",speed:30.626512,xdo:[2,8,5,4,5,5,5],nodalCorrection:"y",aliases:["\u03B72","ETA2"]},{name:"KJ2",speed:30.626512,xdo:[2,8,5,4,5,5,7],nodalCorrection:"x",aliases:[]},{name:"2KM(SN)2",speed:30.7086493,xdo:[2,8,7,4,5,5,5],nodalCorrection:"x",aliases:["2KMSN2"]},{name:"2SM2",speed:31.0158958,xdo:[2,9,1,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2MS2N2",speed:31.0887494,xdo:[2,9,3,3,5,5,5],nodalCorrection:"x",aliases:[]},{name:"SKM2",speed:31.098033,xdo:[2,9,3,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2Snu2",speed:31.4874168,xdo:null,nodalCorrection:"x",aliases:["2S\u03BD2"]},{name:"3(SM)N2",speed:31.4874168,xdo:null,nodalCorrection:"x",aliases:[]},{name:"2SN2",speed:31.5602705,xdo:null,nodalCorrection:"x",aliases:[]},{name:"SKN2",speed:31.6424078,xdo:null,nodalCorrection:"x",aliases:[]},{name:"3S2M2",speed:32.0317915,xdo:null,nodalCorrection:"x",aliases:[]},{name:"2SK2M2",speed:32.1139288,xdo:null,nodalCorrection:"x",aliases:[]},{name:"MQ3",speed:42.3827651,xdo:[3,3,5,6,5,5,4],nodalCorrection:"x",aliases:[]},{name:"NO3",speed:42.3827651,xdo:[3,3,5,6,5,5,4],nodalCorrection:"x",aliases:[]},{name:"MO3",speed:42.9271398,xdo:[3,4,5,5,5,5,4],nodalCorrection:"x",aliases:[]},{name:"2MK3",speed:42.9271398,xdo:[3,4,5,5,5,5,4],nodalCorrection:"x",aliases:[]},{name:"2NKM3",speed:42.9364235,xdo:[3,4,5,7,5,5,6],nodalCorrection:"x",aliases:[]},{name:"2MS3",speed:42.9682085,xdo:[3,4,6,5,5,5,7],nodalCorrection:"x",aliases:[]},{name:"2MP3",speed:43.0092771,xdo:[3,4,7,5,5,5,6],nodalCorrection:"x",aliases:[]},{name:"M3",speed:43.4761564,xdo:[3,5,5,5,5,5,7],nodalCorrection:"g",aliases:[]},{name:"NK3",speed:43.4807982,xdo:[3,5,5,6,5,5,6],nodalCorrection:"x",aliases:[]},{name:"SO3",speed:43.9430356,xdo:[3,6,3,5,5,5,4],nodalCorrection:"x",aliases:[]},{name:"MP3",speed:43.9430356,xdo:[3,6,3,5,5,5,4],nodalCorrection:"x",aliases:[]},{name:"MS3",speed:43.9841042,xdo:[3,6,4,5,5,5,7],nodalCorrection:"x",aliases:[]},{name:"MK3",speed:44.0251729,xdo:[3,6,5,5,5,5,6],nodalCorrection:"x",aliases:[]},{name:"NSO3",speed:44.4966939,xdo:[3,7,3,6,5,5,6],nodalCorrection:"x",aliases:[]},{name:"2MQ3",speed:44.5695476,xdo:[3,7,5,4,5,5,6],nodalCorrection:"x",aliases:[]},{name:"T3",speed:44.9589333,xdo:[3,8,1,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"SP3",speed:44.9589314,xdo:[3,8,1,5,5,5,4],nodalCorrection:"x",aliases:[]},{name:"S3",speed:45,xdo:[3,8,2,5,5,5,7],nodalCorrection:"x",aliases:[]},{name:"SK3",speed:45.0410686,xdo:[3,8,3,5,5,5,6],nodalCorrection:"x",aliases:["R3"]},{name:"K3",speed:45.1232059,xdo:[3,8,5,5,5,5,6],nodalCorrection:"x",aliases:[]},{name:"2SO3",speed:46.0569644,xdo:null,nodalCorrection:"x",aliases:[]},{name:"4MS4",speed:55.936417,xdo:[4,1,9,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"4M2S4",speed:55.936417,xdo:[4,1,9,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2MNK4",speed:56.3258007,xdo:[4,2,5,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"3NM4",speed:56.3350844,xdo:[4,2,5,8,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2MNS4",speed:56.407938,xdo:[4,2,7,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2MnuS4",speed:56.4807917,xdo:[4,2,9,4,5,5,5],nodalCorrection:"x",aliases:["2M\u03BDS4"]},{name:"3MK4",speed:56.8701754,xdo:[4,3,5,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"MNLK4",speed:56.8701754,xdo:[4,3,5,5,5,5,7],nodalCorrection:"x",aliases:[]},{name:"2N4",speed:56.879459,xdo:[4,3,5,7,5,5,5],nodalCorrection:"x",aliases:[]},{name:"N4",speed:56.8794591,xdo:[4,3,5,7,5,5,5],nodalCorrection:"x",aliases:[]},{name:"3MS4",speed:56.9523127,xdo:[4,3,7,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2NKS4",speed:56.9615964,xdo:[4,3,7,7,5,5,5],nodalCorrection:"x",aliases:[]},{name:"MSNK4",speed:57.3416965,xdo:[4,4,3,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"MN4",speed:57.4238338,xdo:[4,4,5,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"Mnu4",speed:57.4966874,xdo:[4,4,7,4,5,5,5],nodalCorrection:"x",aliases:["M\u03BD4"]},{name:"2MLS4",speed:57.4966874,xdo:[4,4,7,4,5,5,7],nodalCorrection:"x",aliases:[]},{name:"MNKS4",speed:57.5059711,xdo:[4,4,7,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2MSK4",speed:57.8860712,xdo:[4,5,3,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"MA4",speed:57.92714,xdo:[4,5,4,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"M4",speed:57.9682085,xdo:[4,5,5,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2MRS4",speed:58.0092752,xdo:[4,5,6,5,5,4,7],nodalCorrection:"x",aliases:[]},{name:"2MKS4",speed:58.0503458,xdo:[4,5,7,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"SN4",speed:58.4397295,xdo:[4,6,3,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"3MN4",speed:58.5125832,xdo:[4,6,5,4,5,5,5],nodalCorrection:"x",aliases:[]},{name:"ML4",speed:58.5125832,xdo:[4,6,5,4,5,5,5],nodalCorrection:"x",aliases:[]},{name:"KN4",speed:58.5218668,xdo:[4,6,5,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"NK4",speed:58.521867,xdo:[4,6,5,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2SMK4",speed:58.901967,xdo:[4,7,1,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"M2SK4",speed:58.901967,xdo:[4,7,1,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"MT4",speed:58.9430376,xdo:[4,7,2,5,5,6,5],nodalCorrection:"x",aliases:[]},{name:"MS4",speed:58.9841042,xdo:[4,7,3,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"MR4",speed:59.0251709,xdo:[4,7,4,5,5,4,7],nodalCorrection:"x",aliases:[]},{name:"MK4",speed:59.0662415,xdo:[4,7,5,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2SNM4",speed:59.4556253,xdo:[4,8,1,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"SL4",speed:59.528479,xdo:[4,8,3,4,5,5,7],nodalCorrection:"x",aliases:[]},{name:"2MSN4",speed:59.5284794,xdo:[4,8,3,4,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2MKN4",speed:59.6106162,xdo:[4,8,5,4,5,5,5],nodalCorrection:"x",aliases:[]},{name:"ST4",speed:59.9589333,xdo:[4,9,0,5,5,6,5],nodalCorrection:"x",aliases:[]},{name:"S4",speed:60,xdo:[4,9,1,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"SK4",speed:60.0821373,xdo:[4,9,3,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"K4",speed:60.1642746,xdo:[4,9,5,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"3SM4",speed:61.0158958,xdo:null,nodalCorrection:"x",aliases:[]},{name:"2SKM4",speed:61.098033,xdo:null,nodalCorrection:"x",aliases:[]},{name:"MNO5",speed:71.3668694,xdo:[5,3,5,6,5,5,4],nodalCorrection:"x",aliases:[]},{name:"2NKMS5",speed:71.453648,xdo:[5,3,7,7,5,5,6],nodalCorrection:"x",aliases:[]},{name:"2MO5",speed:71.911244,xdo:[5,4,5,5,5,5,4],nodalCorrection:"x",aliases:[]},{name:"3MK5",speed:71.9112441,xdo:[5,4,5,5,5,5,4],nodalCorrection:"x",aliases:[]},{name:"2NK5",speed:71.9205277,xdo:[5,4,5,7,5,5,6],nodalCorrection:"x",aliases:[]},{name:"3MS5",speed:71.9523127,xdo:[5,4,6,5,5,5,7],nodalCorrection:"x",aliases:[]},{name:"3MP5",speed:71.9933814,xdo:[5,4,7,5,5,5,6],nodalCorrection:"x",aliases:[]},{name:"NSO5",speed:72.3827651,xdo:[5,5,3,6,5,5,4],nodalCorrection:"x",aliases:[]},{name:"M5",speed:72.460261,xdo:[5,5,5,5,5,5,6],nodalCorrection:"g",aliases:[]},{name:"MNK5",speed:72.4649024,xdo:[5,5,5,6,5,5,6],nodalCorrection:"x",aliases:[]},{name:"MB5",speed:72.501329,xdo:[5,5,6,5,5,5,6],nodalCorrection:"x",aliases:[]},{name:"MSO5",speed:72.9271398,xdo:[5,6,3,5,5,5,4],nodalCorrection:"x",aliases:[]},{name:"2MP5",speed:72.92714,xdo:[5,6,3,5,5,5,4],nodalCorrection:"x",aliases:[]},{name:"2MS5",speed:72.9682085,xdo:[5,6,4,5,5,5,7],nodalCorrection:"x",aliases:[]},{name:"3MO5",speed:73.009277,xdo:[5,6,5,5,5,5,6],nodalCorrection:"x",aliases:[]},{name:"2MK5",speed:73.009277,xdo:[5,6,5,5,5,5,6],nodalCorrection:"x",aliases:[]},{name:"NSK5",speed:73.471515,xdo:[5,7,3,4,5,5,6],nodalCorrection:"x",aliases:[]},{name:"3MQ5",speed:73.5536518,xdo:[5,7,5,4,5,5,6],nodalCorrection:"x",aliases:[]},{name:"MSP5",speed:73.9430356,xdo:[5,8,1,5,5,5,4],nodalCorrection:"x",aliases:[]},{name:"MSK5",speed:74.0251729,xdo:[5,8,3,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"3KM5",speed:74.1073102,xdo:[5,8,5,5,5,5,4],nodalCorrection:"x",aliases:[]},{name:"2SP5",speed:74.9589314,xdo:null,nodalCorrection:"x",aliases:[]},{name:"2SK5",speed:75.0410686,xdo:null,nodalCorrection:"x",aliases:[]},{name:"(SK)K5",speed:75.1232059,xdo:null,nodalCorrection:"x",aliases:[]},{name:"2(MN)K6",speed:84.7655303,xdo:[6,1,5,7,5,5,5],nodalCorrection:"x",aliases:[]},{name:"5MKS6",speed:84.8383839,xdo:[6,1,7,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2(MN)S6",speed:84.8476676,xdo:[6,1,7,7,5,5,5],nodalCorrection:"x",aliases:[]},{name:"5M2S6",speed:84.9205212,xdo:[6,1,9,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"3MNK6",speed:85.309905,xdo:[6,2,5,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"N6",speed:85.3191886,xdo:[6,2,5,8,5,5,5],nodalCorrection:"x",aliases:[]},{name:"3MNS6",speed:85.3920423,xdo:[6,2,7,6,5,5,5],nodalCorrection:"x",aliases:["2NMLS6"]},{name:"3NKS6",speed:85.4013259,xdo:[6,2,7,8,5,5,5],nodalCorrection:"x",aliases:[]},{name:"3MnuS6",speed:85.4648959,xdo:[6,2,9,4,5,5,5],nodalCorrection:"x",aliases:["3M\u03BDS6"]},{name:"4MK6",speed:85.8542797,xdo:[6,3,5,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"M2N6",speed:85.863563,xdo:[6,3,5,7,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2NM6",speed:85.8635633,xdo:[6,3,5,7,5,5,5],nodalCorrection:"x",aliases:[]},{name:"4MS6",speed:85.936417,xdo:[6,3,7,5,5,5,5],nodalCorrection:"x",aliases:["2MLNS6"]},{name:"2NMKS6",speed:85.9457006,xdo:[6,3,7,7,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2MSNK6",speed:86.3258007,xdo:[6,4,3,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2MN6",speed:86.407938,xdo:[6,4,5,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2Mnu6",speed:86.4807917,xdo:[6,4,7,4,5,5,5],nodalCorrection:"x",aliases:["2M\u03BD6","3MLS6"]},{name:"2MNO6",speed:86.480792,xdo:[6,4,7,4,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2MNKS6",speed:86.4900753,xdo:[6,4,7,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"3MSK6",speed:86.8701754,xdo:[6,5,3,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"MA6",speed:86.911244,xdo:[6,5,4,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"M6",speed:86.9523127,xdo:[6,5,5,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"3MKS6",speed:87.03445,xdo:[6,5,7,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"MTN6",speed:87.3827671,xdo:[6,6,2,6,5,6,5],nodalCorrection:"x",aliases:[]},{name:"MSN6",speed:87.4238338,xdo:[6,6,3,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2ML6",speed:87.496687,xdo:[6,6,5,4,5,5,7],nodalCorrection:"x",aliases:[]},{name:"4MN6",speed:87.4966874,xdo:[6,6,5,4,5,5,5],nodalCorrection:"x",aliases:[]},{name:"MKN6",speed:87.505971,xdo:[6,6,5,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"MNK6",speed:87.5059711,xdo:[6,6,5,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"MKnu6",speed:87.5788247,xdo:[6,6,7,4,5,5,5],nodalCorrection:"x",aliases:["MK\u03BD6"]},{name:"2(MS)K6",speed:87.8860712,xdo:[6,7,1,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2MT6",speed:87.9271418,xdo:[6,7,2,5,5,6,5],nodalCorrection:"x",aliases:[]},{name:"2MS6",speed:87.9682085,xdo:[6,7,3,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2MK6",speed:88.0503458,xdo:[6,7,5,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2SN6",speed:88.4397295,xdo:[6,8,1,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"3MTN6",speed:88.4715165,xdo:[6,8,2,4,5,6,5],nodalCorrection:"x",aliases:[]},{name:"MSL6",speed:88.512583,xdo:[6,8,3,4,5,5,7],nodalCorrection:"x",aliases:[]},{name:"3MSN6",speed:88.5125832,xdo:[6,8,3,4,5,5,5],nodalCorrection:"x",aliases:[]},{name:"NSK6",speed:88.5218668,xdo:[6,8,3,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"SNK6",speed:88.521867,xdo:[6,8,3,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"3MKN6",speed:88.59472,xdo:[6,8,5,4,5,5,5],nodalCorrection:"x",aliases:[]},{name:"MKL6",speed:88.5947205,xdo:[6,8,5,4,5,5,7],nodalCorrection:"x",aliases:[]},{name:"MST6",speed:88.9430376,xdo:[6,9,0,5,5,6,5],nodalCorrection:"x",aliases:[]},{name:"2SM6",speed:88.9841042,xdo:[6,9,1,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"MSK6",speed:89.0662415,xdo:[6,9,3,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"SKM6",speed:89.066242,xdo:[6,9,3,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2KM6",speed:89.1483788,xdo:[6,9,5,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2MSTN6",speed:89.4874123,xdo:null,nodalCorrection:"x",aliases:[]},{name:"2(MS)N6",speed:89.528479,xdo:null,nodalCorrection:"x",aliases:[]},{name:"2MSKN6",speed:89.6106162,xdo:null,nodalCorrection:"x",aliases:[]},{name:"S6",speed:90,xdo:null,nodalCorrection:"x",aliases:[]},{name:"2MNO7",speed:100.3509736,xdo:[7,3,5,6,5,5,4],nodalCorrection:"x",aliases:[]},{name:"3MQ7",speed:100.3509736,xdo:[7,3,5,6,5,5,4],nodalCorrection:"x",aliases:[]},{name:"4MK7",speed:100.8953483,xdo:[7,4,5,5,5,5,4],nodalCorrection:"x",aliases:[]},{name:"2NMK7",speed:100.904632,xdo:[7,4,5,7,5,5,6],nodalCorrection:"x",aliases:[]},{name:"MNSO7",speed:101.3668694,xdo:[7,5,3,6,5,5,4],nodalCorrection:"x",aliases:[]},{name:"M7",speed:101.4443667,xdo:[7,5,5,5,5,5,7],nodalCorrection:"g",aliases:[]},{name:"2MNK7",speed:101.4490067,xdo:[7,5,5,6,5,5,6],nodalCorrection:"x",aliases:[]},{name:"MNKO7",speed:101.4490067,xdo:[7,5,5,6,5,5,6],nodalCorrection:"x",aliases:[]},{name:"2MSO7",speed:101.9112441,xdo:[7,6,3,5,5,5,4],nodalCorrection:"x",aliases:[]},{name:"3MK7",speed:101.9933814,xdo:[7,6,5,5,5,5,6],nodalCorrection:"x",aliases:[]},{name:"MSKO7",speed:103.0092771,xdo:[7,8,3,5,5,5,4],nodalCorrection:"x",aliases:[]},{name:"3M2NS8",speed:113.8317718,xdo:[8,1,7,7,5,5,5],nodalCorrection:"x",aliases:[]},{name:"4MNS8",speed:114.3761465,xdo:[8,2,7,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"5MK8",speed:114.8383839,xdo:[8,3,5,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2(MN)8",speed:114.8476676,xdo:[8,3,5,7,5,5,5],nodalCorrection:"x",aliases:["2MN8"]},{name:"5MS8",speed:114.9205212,xdo:[8,3,7,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2(MN)KS8",speed:114.9298048,xdo:[8,3,7,7,5,5,5],nodalCorrection:"x",aliases:[]},{name:"3MSNK8",speed:115.309905,xdo:[8,4,3,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"3MN8",speed:115.3920423,xdo:[8,4,5,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"3Mnu8",speed:115.4648959,xdo:[8,4,7,4,5,5,5],nodalCorrection:"x",aliases:["3M\u03BD8","4MLS8"]},{name:"3MNKS8",speed:115.4741795,xdo:[8,4,7,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"4MSK8",speed:115.8542797,xdo:[8,5,3,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"MA8",speed:115.895348,xdo:[8,5,4,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"M8",speed:115.936417,xdo:[8,5,5,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"4MKS8",speed:116.0185542,xdo:[8,5,7,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2MSN8",speed:116.407938,xdo:[8,6,3,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"3ML8",speed:116.4807917,xdo:[8,6,5,4,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2MNK8",speed:116.4900753,xdo:[8,6,5,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"3M2SK8",speed:116.8701754,xdo:[8,7,1,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2(NS)8",speed:116.8794591,xdo:[8,7,1,7,5,5,5],nodalCorrection:"x",aliases:[]},{name:"3MT8",speed:116.911246,xdo:[8,7,2,5,5,6,5],nodalCorrection:"x",aliases:[]},{name:"3MS8",speed:116.9523127,xdo:[8,7,3,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"3MK8",speed:117.03445,xdo:[8,7,5,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2SNM8",speed:117.4238338,xdo:[8,8,1,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2SMN8",speed:117.423834,xdo:[8,8,1,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2MSL8",speed:117.4966874,xdo:[8,8,3,4,5,5,7],nodalCorrection:"x",aliases:[]},{name:"MSNK8",speed:117.5059711,xdo:[8,8,3,6,5,5,5],nodalCorrection:"x",aliases:[]},{name:"4MSN8",speed:117.578825,xdo:[8,8,5,4,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2MST8",speed:117.9271418,xdo:[8,9,0,5,5,6,5],nodalCorrection:"x",aliases:[]},{name:"2(MS)8",speed:117.9682085,xdo:[8,9,1,5,5,5,5],nodalCorrection:"x",aliases:["2MS8"]},{name:"2MSK8",speed:118.0503458,xdo:[8,9,3,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"2(MK)8",speed:118.132483,xdo:[8,9,5,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"3SN8",speed:118.4397295,xdo:null,nodalCorrection:"x",aliases:[]},{name:"2SML8",speed:118.5125832,xdo:null,nodalCorrection:"x",aliases:[]},{name:"2SKN8",speed:118.5218668,xdo:null,nodalCorrection:"x",aliases:[]},{name:"MSKL8",speed:118.5947205,xdo:null,nodalCorrection:"x",aliases:[]},{name:"3SM8",speed:118.9841042,xdo:null,nodalCorrection:"x",aliases:[]},{name:"2SMK8",speed:119.0662415,xdo:null,nodalCorrection:"x",aliases:[]},{name:"S8",speed:120,xdo:null,nodalCorrection:"x",aliases:[]},{name:"3MNO9",speed:129.3350779,xdo:[9,3,5,6,5,5,4],nodalCorrection:"x",aliases:[]},{name:"2M2NK9",speed:129.8887362,xdo:[9,4,5,7,5,5,6],nodalCorrection:"x",aliases:[]},{name:"2(MN)K9",speed:129.888738,xdo:[9,4,5,7,5,5,6],nodalCorrection:"x",aliases:[]},{name:"MA9",speed:130.3874,xdo:[9,5,4,5,5,5,5],nodalCorrection:"x",aliases:[]},{name:"3MNK9",speed:130.4331109,xdo:[9,5,5,6,5,5,6],nodalCorrection:"x",aliases:[]},{name:"4MK9",speed:130.9774856,xdo:[9,6,5,5,5,5,6],nodalCorrection:"x",aliases:[]},{name:"3MSK9",speed:131.9933814,xdo:[9,8,3,5,5,5,6],nodalCorrection:"x",aliases:[]},{name:"5MNS10",speed:143.3602507,xdo:null,nodalCorrection:"x",aliases:[]},{name:"3M2N10",speed:143.8317718,xdo:null,nodalCorrection:"x",aliases:[]},{name:"6MS10",speed:143.9046254,xdo:null,nodalCorrection:"x",aliases:[]},{name:"3M2NKS10",speed:143.9139091,xdo:null,nodalCorrection:"x",aliases:[]},{name:"4MSNK10",speed:144.2940092,xdo:null,nodalCorrection:"x",aliases:[]},{name:"4MN10",speed:144.3761465,xdo:null,nodalCorrection:"x",aliases:[]},{name:"4Mnu10",speed:144.4490002,xdo:null,nodalCorrection:"x",aliases:["4M\u03BD10"]},{name:"5MSK10",speed:144.8383839,xdo:null,nodalCorrection:"x",aliases:[]},{name:"M10",speed:144.9205212,xdo:null,nodalCorrection:"x",aliases:[]},{name:"5MKS10",speed:145.0026585,xdo:null,nodalCorrection:"x",aliases:[]},{name:"3MSN10",speed:145.3920423,xdo:null,nodalCorrection:"x",aliases:["3MNS10"]},{name:"6MN10",speed:145.4648959,xdo:null,nodalCorrection:"x",aliases:[]},{name:"4ML10",speed:145.4648959,xdo:null,nodalCorrection:"x",aliases:[]},{name:"3MNK10",speed:145.4741795,xdo:null,nodalCorrection:"x",aliases:[]},{name:"2(SN)M10",speed:145.8635633,xdo:null,nodalCorrection:"x",aliases:[]},{name:"4MS10",speed:145.936417,xdo:null,nodalCorrection:"x",aliases:[]},{name:"4MK10",speed:146.0185542,xdo:null,nodalCorrection:"x",aliases:[]},{name:"2(MS)N10",speed:146.407938,xdo:null,nodalCorrection:"x",aliases:[]},{name:"3MSL10",speed:146.4807915,xdo:null,nodalCorrection:"x",aliases:[]},{name:"2MNSK10",speed:146.4900753,xdo:null,nodalCorrection:"x",aliases:[]},{name:"5MSN10",speed:146.5629217,xdo:null,nodalCorrection:"x",aliases:[]},{name:"3M2S10",speed:146.9523127,xdo:null,nodalCorrection:"x",aliases:[]},{name:"3MSK10",speed:147.03445,xdo:null,nodalCorrection:"x",aliases:[]},{name:"3SMN10",speed:147.4238338,xdo:null,nodalCorrection:"x",aliases:[]},{name:"2SMKN10",speed:147.5059711,xdo:null,nodalCorrection:"x",aliases:[]},{name:"4M2SN10",speed:147.578825,xdo:null,nodalCorrection:"x",aliases:[]},{name:"3S2M10",speed:147.9682085,xdo:null,nodalCorrection:"x",aliases:[]},{name:"2(MS)K10",speed:148.0503458,xdo:null,nodalCorrection:"x",aliases:[]},{name:"4MSK11",speed:160.9774856,xdo:null,nodalCorrection:"x",aliases:[]},{name:"5M2NS12",speed:171.7999803,xdo:null,nodalCorrection:"x",aliases:[]},{name:"3(MN)12",speed:172.2715013,xdo:null,nodalCorrection:"x",aliases:[]},{name:"6MNS12",speed:172.344355,xdo:null,nodalCorrection:"x",aliases:[]},{name:"4M2N12",speed:172.815876,xdo:null,nodalCorrection:"x",aliases:[]},{name:"7MS12",speed:172.8887297,xdo:null,nodalCorrection:"x",aliases:[]},{name:"4M2NKS12",speed:172.8980133,xdo:null,nodalCorrection:"x",aliases:[]},{name:"5MSNK12",speed:173.2781135,xdo:null,nodalCorrection:"x",aliases:[]},{name:"5MN12",speed:173.3602507,xdo:null,nodalCorrection:"x",aliases:[]},{name:"3N2MS12",speed:173.362457,xdo:null,nodalCorrection:"x",aliases:[]},{name:"5Mnu12",speed:173.4331044,xdo:null,nodalCorrection:"x",aliases:["5M\u03BD12"]},{name:"6MSK12",speed:173.8224882,xdo:null,nodalCorrection:"x",aliases:[]},{name:"MA12",speed:173.863557,xdo:null,nodalCorrection:"x",aliases:[]},{name:"M12",speed:173.9046254,xdo:null,nodalCorrection:"x",aliases:[]},{name:"4MSN12",speed:174.3761465,xdo:null,nodalCorrection:"x",aliases:["4MNS12"]},{name:"4ML12",speed:174.449,xdo:null,nodalCorrection:"x",aliases:[]},{name:"4MNK12",speed:174.4582839,xdo:null,nodalCorrection:"x",aliases:[]},{name:"2(MSN)12",speed:174.8476676,xdo:null,nodalCorrection:"x",aliases:[]},{name:"5MT12",speed:174.8794545,xdo:null,nodalCorrection:"x",aliases:[]},{name:"5MS12",speed:174.9205212,xdo:null,nodalCorrection:"x",aliases:[]},{name:"5MK12",speed:175.0026585,xdo:null,nodalCorrection:"x",aliases:[]},{name:"3M2SN12",speed:175.3920423,xdo:null,nodalCorrection:"x",aliases:[]},{name:"6MSN12",speed:175.4648959,xdo:null,nodalCorrection:"x",aliases:["4MSL12"]},{name:"3MNKS12",speed:175.4741785,xdo:null,nodalCorrection:"x",aliases:[]},{name:"5MSN12",speed:175.547033,xdo:null,nodalCorrection:"x",aliases:[]},{name:"4MST12",speed:175.8953503,xdo:null,nodalCorrection:"x",aliases:[]},{name:"4M2S12",speed:175.936417,xdo:null,nodalCorrection:"x",aliases:[]},{name:"4MSK12",speed:176.0185542,xdo:null,nodalCorrection:"x",aliases:[]},{name:"3(MS)12",speed:176.9523127,xdo:null,nodalCorrection:"x",aliases:[]},{name:"3M2SK12",speed:177.03445,xdo:null,nodalCorrection:"x",aliases:[]},{name:"5MSN14",speed:203.3602507,xdo:null,nodalCorrection:"x",aliases:[]},{name:"5MNK14",speed:203.442388,xdo:null,nodalCorrection:"x",aliases:[]},{name:"6MS14",speed:203.9046254,xdo:null,nodalCorrection:"x",aliases:[]}])Ko(e);var ve=g,pe=e=>{if(e instanceof Date)return e;if(typeof e=="number")return new Date(e*1e3);throw new Error("Invalid date format, should be a Date object, or timestamp")},wo=(e,o,n=600)=>{let a=[],s=Math.ceil(o.getTime()/1e3/n)*n,l=Math.floor(e.getTime()/1e3/n)*n,i=l,t=[];for(;i<=s;)a.push(new Date(i*1e3)),t.push((i-l)/3600),i+=n;return{items:a,hours:t}},Z=({harmonicConstituents:e,constituentModels:o=ve,offset:n,fundamentals:a=j,prominenceThreshold:s})=>{if(!Array.isArray(e))throw new Error("Harmonic constituents are not an array");let l=[];e.forEach(c=>{if(typeof c.name=="undefined")throw new Error("Harmonic constituents must have a name property");o[c.name]!==void 0&&l.push({...c,phase:r*c.phase})}),n!==!1&&l.push({name:"Z0",phase:0,amplitude:n});let i=new Date,t=new Date,d={};return d.setTimeSpan=(c,p)=>{if(i=pe(c),t=pe(p),i.getTime()>=t.getTime())throw new Error("Start time must be before end time");return d},d.prediction=c=>{var h,T;let p=typeof c!="undefined"?c:{timeFidelity:600},u=wo(i,t,p.timeFidelity);return po({timeline:u,constituents:l,constituentModels:o,start:(h=u.items[0])!=null?h:i,fundamentals:a,prominenceThreshold:(T=p.prominenceThreshold)!=null?T:s})},Object.freeze(d)};function ne(e,o={}){let{nodeCorrections:n,...a}=o,s={harmonicConstituents:e,fundamentals:lo(n),offset:!1,...a};return{getTimelinePrediction:({start:l,end:i,timeFidelity:t,offsets:d})=>Z(s).setTimeSpan(l,i).prediction({timeFidelity:t}).getTimelinePrediction({offsets:d}),getExtremesPrediction:({start:l,end:i,labels:t,offsets:d})=>Z(s).setTimeSpan(l,i).prediction().getExtremesPrediction({labels:t,offsets:d}),getWaterLevelAtTime:({time:l,offsets:i})=>{let t=new Date(l.getTime()+6e5);return Z(s).setTimeSpan(l,t).prediction().getTimelinePrediction({offsets:i})[0]}}}ne.constituents=ve;window.createTidePredictor=ne;})();
+/*! Bundled license information:
+
+@neaps/tide-predictor/dist/index.js:
+  (* v8 ignore if -- @preserve *)
+*/
+</script>
+<script>/* Tide calculation core: London-time helpers, moon phase, daily tide data, spring/neap classification.
+   Plain script (no modules) so it can be inlined into the page and tested in Node. */
+var TideCore = (function () {
+  var TZ = 'Europe/London';
+  var RAD = Math.PI / 180;
+
+  var partsFmt = new Intl.DateTimeFormat('en-GB', {
+    timeZone: TZ, hourCycle: 'h23',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit'
+  });
+
+  function partsOf(ms) {
+    var o = {};
+    partsFmt.formatToParts(new Date(ms)).forEach(function (p) { o[p.type] = p.value; });
+    return o;
+  }
+
+  // London clock minus UTC, in ms, at a given instant (3,600,000 in summer, 0 in winter).
+  function offsetMs(ms) {
+    var p = partsOf(ms);
+    var asUtc = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second);
+    return asUtc - Math.floor(ms / 1000) * 1000;
+  }
+
+  function dayKey(ms) {
+    var p = partsOf(ms);
+    return p.year + '-' + p.month + '-' + p.day;
+  }
+
+  function addDays(key, n) {
+    var a = key.split('-').map(Number);
+    return new Date(Date.UTC(a[0], a[1] - 1, a[2] + n)).toISOString().slice(0, 10);
+  }
+
+  // UTC instant of London midnight at the start of the given YYYY-MM-DD.
+  function dayStart(key) {
+    var a = key.split('-').map(Number);
+    var wall = Date.UTC(a[0], a[1] - 1, a[2]);
+    var t = wall - offsetMs(wall);
+    return wall - offsetMs(t);
+  }
+
+  function norm360(x) { return ((x % 360) + 360) % 360; }
+
+  // Moon-sun elongation in degrees (0 = new, 180 = full). Low-precision series; good to ~0.5 degree.
+  function elongation(ms) {
+    var jd = ms / 86400000 + 2440587.5;
+    var T = (jd - 2451545) / 36525;
+    var Lp = 218.3164477 + 481267.88123421 * T;
+    var D = 297.8501921 + 445267.1114034 * T;
+    var M = 357.5291092 + 35999.0502909 * T;
+    var Mp = 134.9633964 + 477198.8675055 * T;
+    var F = 93.2720950 + 483202.0175233 * T;
+    function s(x) { return Math.sin(x * RAD); }
+    var moon = Lp + 6.288774 * s(Mp) + 1.274027 * s(2 * D - Mp) + 0.658314 * s(2 * D) +
+      0.213618 * s(2 * Mp) - 0.185116 * s(M) - 0.114332 * s(2 * F) + 0.058793 * s(2 * D - 2 * Mp) +
+      0.057066 * s(2 * D - M - Mp) + 0.053322 * s(2 * D + Mp) + 0.045758 * s(2 * D - M) -
+      0.040923 * s(M - Mp) - 0.034720 * s(D) - 0.030383 * s(M + Mp);
+    var Ls = 280.46646 + 36000.76983 * T;
+    var Ms = 357.52911 + 35999.05029 * T;
+    var sun = Ls + 1.914602 * s(Ms) + 0.019993 * s(2 * Ms);
+    return norm360(moon - sun);
+  }
+
+  function moonPhase(ms) {
+    var e = elongation(ms);
+    var names = ['New moon', 'Waxing crescent', 'First quarter', 'Waxing gibbous',
+      'Full moon', 'Waning gibbous', 'Last quarter', 'Waning crescent'];
+    var name = names[Math.floor(norm360(e + 22.5) / 45) % 8];
+    return { elong: e, name: name, illum: (1 - Math.cos(e * RAD)) / 2, waxing: e < 180 };
+  }
+
+  function avg(a) { return a.reduce(function (x, y) { return x + y; }, 0) / a.length; }
+
+  function constituentsOf(st) {
+    return st.c.map(function (a) { return { name: a[0], amplitude: a[1], phase: a[2] }; });
+  }
+
+  // Typical spring and neap ranges for a station (measured from its own predictions, see build step).
+  function typicalRanges(st) {
+    return { spring: st.spr, neap: st.nep };
+  }
+
+  // Tidal range for a day: highest high water minus lowest low water. Using the extremes of the day
+  // (rather than averaging) copes with double high waters such as Southampton and Bournemouth.
+  function dayRange(list) {
+    var hi = list.filter(function (e) { return e.high; }).map(function (e) { return e.h; });
+    var lo = list.filter(function (e) { return !e.high; }).map(function (e) { return e.h; });
+    if (!hi.length || !lo.length) return NaN;
+    return Math.max.apply(null, hi) - Math.min.apply(null, lo);
+  }
+
+  // Everything the page needs for one station and date.
+  function compute(createPredictor, st, key, days) {
+    days = days || 14;
+    var predictor = createPredictor(constituentsOf(st));
+    var from = dayStart(addDays(key, -2));
+    var to = dayStart(addDays(key, days + 1));
+    var all = predictor.getExtremesPrediction({ start: new Date(from), end: new Date(to) })
+      .map(function (e) { return { t: e.time.getTime(), h: e.level + st.off, high: !!e.high }; });
+
+    var byDay = {};
+    all.forEach(function (e) { (byDay[dayKey(e.t)] = byDay[dayKey(e.t)] || []).push(e); });
+
+    function rangeOf(k) { return dayRange(byDay[k] || []); }
+
+    var typ = typicalRanges(st);
+    function index(range) { return (range - typ.neap) / (typ.spring - typ.neap); }
+
+    var strip = [];
+    for (var i = 0; i < days; i++) {
+      var k = addDays(key, i);
+      var r = rangeOf(k);
+      strip.push({ key: k, range: r, q: index(r) });
+    }
+
+    var rangeToday = rangeOf(key);
+    var before = rangeOf(addDays(key, -1)), after = rangeOf(addDays(key, 1));
+    var building = after > before;
+
+    var start = dayStart(key), end = dayStart(addDays(key, 1));
+    var timeline = predictor.getTimelinePrediction({
+      start: new Date(start), end: new Date(end), timeFidelity: 300
+    }).map(function (p) { return { t: p.time.getTime(), h: p.level + st.off }; });
+
+    return {
+      key: key, start: start, end: end,
+      extremes: (byDay[key] || []).filter(function (e) { return e.t >= start && e.t < end; }),
+      timeline: timeline,
+      range: rangeToday, typical: typ, q: index(rangeToday), building: building,
+      strip: strip,
+      moon: moonPhase(start + 12 * 3600 * 1000),
+      verdict: classify(rangeToday, typ, building)
+    };
+  }
+
+  function classify(range, typ, building) {
+    var q = (range - typ.neap) / (typ.spring - typ.neap);
+    if (!isFinite(q)) return { kind: 'unknown', title: 'No data', detail: '' };
+    if (q >= 0.85) {
+      return {
+        kind: 'spring', title: 'Spring tides',
+        detail: range > typ.spring * 1.05 ? 'Bigger than a typical spring tide' : 'A typical spring tide: high highs and low lows'
+      };
+    }
+    if (q <= 0.15) {
+      return {
+        kind: 'neap', title: 'Neap tides',
+        detail: range < typ.neap * 0.95 ? 'Smaller than a typical neap tide' : 'A typical neap tide: small range, gentle flow'
+      };
+    }
+    return {
+      kind: 'between', title: 'In between',
+      detail: building ? 'Building towards springs' : 'Easing towards neaps'
+    };
+  }
+
+  return {
+    TZ: TZ, dayKey: dayKey, addDays: addDays, dayStart: dayStart, offsetMs: offsetMs,
+    elongation: elongation, moonPhase: moonPhase, typicalRanges: typicalRanges,
+    compute: compute, classify: classify, dayRange: dayRange
+  };
+})();
+
+</script>
+<script>var REGIONS=[{"key":"north","label":"North","hint":"Shetland, the far north and the north-east coast of Scotland"},{"key":"northeast","label":"North East","hint":"Edinburgh to Whitby"},{"key":"northwest","label":"North West","hint":"West of Scotland, Northern Ireland, Cumbria, Lancashire and Merseyside"},{"key":"eastmid","label":"East Midlands","hint":"The coast nearest the East Midlands: Humber, Norfolk, Suffolk and Essex"},{"key":"westmid","label":"West Midlands","hint":"The coast nearest the West Midlands: North Wales, Cardigan Bay, South Wales and the Severn"},{"key":"southeast","label":"South East","hint":"Thames estuary and the Kent coast"},{"key":"south","label":"South","hint":"Sussex, Hampshire and Dorset"},{"key":"southwest","label":"South West","hint":"Devon, Cornwall, Scilly and the Bristol Channel"}];var STATIONS=[{"id":"lerwick","n":"Lerwick","s":"Shetland","r":"north","la":60.154,"lo":-1.14,"off":1.263,"spr":1.76,"nep":0.86,"q":85,"c":[["M2",0.5808,311.82],["N2",0.1207,291.52],["S2",0.209,346.93],["K2",0.0594,343.93],["2N2",0.0173,272.19],["S1",0.005,82.35],["K1",0.0747,164.99],["P1",0.0225,150.1],["O1",0.0785,31.89],["Q1",0.028,340.46],["M1",0.0032,56.69],["M4",0.0155,276.99],["MM",0.0099,173.65],["MF",0.0221,188.66],["SA",0.1045,235.9],["SSA",0.0152,189.35],["T2",0.0108,339.8],["J1",0.0035,230.43],["L2",0.0146,317.99],["2Q1",0.0053,289.25],["MSF",0.0039,72.88],["EP2",0.0056,248.46],["M3",0.0067,195.22],["MU2",0.0231,271.28],["MTM",0.0053,191.3],["NU2",0.0219,295.12],["LAMBDA2",0.0044,292.66],["MN4",0.0041,243.11],["MS4",0.0126,3.54],["M6",0.0121,221.7],["RHO1",0.0051,347.39],["SGM",0.0053,123.84],["3L2",0.0034,85.95],["2MS6",0.0128,265.94]]},{"id":"wick","n":"Wick","s":"Caithness","r":"north","la":58.441,"lo":-3.086,"off":1.99,"spr":2.91,"nep":1.53,"q":85,"c":[["M2",1.015,322.28],["N2",0.2034,302.01],["S2",0.3474,0.2],["K2",0.0993,357.71],["2N2",0.0286,281.87],["S1",0.0092,93.87],["K1",0.1088,175.74],["P1",0.0334,162.95],["O1",0.1137,27.9],["Q1",0.038,335.54],["M4",0.0352,318.36],["MM",0.0126,188.55],["MF",0.0184,192.59],["SA",0.108,241.48],["SSA",0.0154,189.47],["T2",0.0166,348.17],["J1",0.0043,237.52],["L2",0.0334,328.47],["R2",0.0044,35.84],["2Q1",0.0067,288.97],["MSF",0.0038,217.13],["MSQM",0.003,219.58],["EP2",0.0047,290.04],["M3",0.0125,231.47],["MU2",0.0195,306.02],["MTM",0.0036,160.29],["NU2",0.0414,303.64],["LAMBDA2",0.0124,305],["MN4",0.0107,270.69],["MS4",0.0193,51.69],["M6",0.0062,228.39],["OO1",0.0034,316.63],["MA2",0.0064,231.81],["MB2",0.0045,140.43],["RHO1",0.0072,336.52],["SGM",0.0048,121.25],["3L2",0.0056,101.76],["3N2",0.0031,71.46],["2SM2",0.0066,154.93],["2MS6",0.0058,260.91]]},{"id":"kinlochbervie","n":"Kinlochbervie","s":"Sutherland","r":"north","la":58.457,"lo":-5.05,"off":2.888,"spr":4.17,"nep":2.02,"q":84,"c":[["M2",1.4353,207.93],["N2",0.291,185.45],["S2",0.5479,241.96],["K2",0.1555,239.86],["2N2",0.0402,164.39],["S1",0.0107,33.75],["K1",0.1196,125.72],["P1",0.0364,114.31],["O1",0.0811,340.85],["Q1",0.0282,292.5],["M1",0.004,35.09],["M4",0.0426,247.82],["MM",0.0129,187.17],["MF",0.0212,197.58],["SA",0.1159,246.36],["SSA",0.0194,190.19],["T2",0.0286,234.87],["J1",0.0057,185.27],["L2",0.0322,234.31],["R2",0.0041,258.77],["2Q1",0.0058,256.66],["MSF",0.0034,59.36],["MSQM",0.0031,217.24],["EP2",0.0125,121.51],["M3",0.0216,125.86],["MU2",0.0545,148.76],["NU2",0.0537,191.43],["LAMBDA2",0.0072,241.27],["MN4",0.009,230.4],["MS4",0.0486,310.29],["MKS2",0.0048,190.49],["S4",0.009,26.24],["OO1",0.0038,261.14],["MA2",0.0047,133.9],["MB2",0.0034,117.37],["T3",0.0033,349.28],["R3",0.0059,177.94],["RHO1",0.0047,300.3],["SGM",0.005,99.24],["3L2",0.0076,354.96],["3N2",0.0039,337.82]]},{"id":"ullapool","n":"Ullapool","s":"Wester Ross","r":"north","la":57.895,"lo":-5.158,"off":3.04,"spr":4.38,"nep":2.08,"q":84,"c":[["M2",1.5032,200.75],["N2",0.3032,178.66],["S2",0.5839,234.96],["K2",0.1663,232.85],["2N2",0.0419,157.51],["S1",0.0114,37.58],["K1",0.1089,128.48],["P1",0.0327,114.95],["O1",0.0769,346.05],["Q1",0.0274,296.88],["M4",0.0643,230.23],["MM",0.0135,207.62],["MF",0.0195,202.92],["SA",0.1172,247.17],["SSA",0.0162,190.05],["T2",0.0308,228.16],["J1",0.0051,180.62],["L2",0.0327,223.67],["R2",0.004,253.07],["2Q1",0.0062,259.02],["MSQM",0.0032,199.95],["EP2",0.013,119.63],["M3",0.0298,121.43],["MU2",0.0572,146.47],["NU2",0.0562,183.47],["LAMBDA2",0.0065,228.27],["MN4",0.0123,196.03],["MS4",0.0738,303.49],["MKS2",0.0056,190.55],["M6",0.0066,198.77],["S4",0.0128,33.38],["OO1",0.0033,261.88],["MA2",0.0057,128.61],["MB2",0.0044,106.67],["T3",0.005,348],["R3",0.0091,179.05],["RHO1",0.0046,305.14],["SGM",0.0052,96.99],["3L2",0.0083,346.89],["3N2",0.0036,334.29],["2MS6",0.0096,223.1]]},{"id":"stornoway","n":"Stornoway","s":"Isle of Lewis","r":"north","la":58.208,"lo":-6.389,"off":2.858,"spr":4.12,"nep":1.97,"q":85,"c":[["M2",1.3904,197.58],["N2",0.2816,175.77],["S2",0.545,231.28],["K2",0.1554,229.13],["2N2",0.0391,155.13],["S1",0.0107,45.43],["K1",0.1311,135.26],["P1",0.0396,125.66],["O1",0.0926,350.44],["Q1",0.033,296.23],["M4",0.0601,220.98],["MM",0.0114,192.33],["MF",0.0199,193.18],["SA",0.1043,241.96],["SSA",0.0138,196.96],["T2",0.0284,224.27],["J1",0.0052,186.97],["L2",0.0296,221.26],["R2",0.0039,246.13],["2Q1",0.0065,252.63],["MSQM",0.0047,212.35],["EP2",0.013,118.16],["M3",0.0295,113.32],["MU2",0.0562,143.8],["NU2",0.0513,181.06],["LAMBDA2",0.0053,225.35],["MN4",0.0105,182.7],["MS4",0.0706,296.1],["MKS2",0.0057,186.08],["M6",0.0069,190.54],["S4",0.0128,29.22],["OO1",0.0035,272.75],["MA2",0.0053,115.19],["MB2",0.0042,107.25],["T3",0.005,339.61],["R3",0.009,170.57],["RHO1",0.0055,304.86],["SGM",0.0059,85.97],["3L2",0.0076,342.98],["3N2",0.0034,330.86],["2SM2",0.0034,258.36],["2MS6",0.0095,218.75]]},{"id":"moray","n":"Moray Firth","s":"Scotland","r":"north","la":57.599,"lo":-4.009,"off":2.414,"spr":3.65,"nep":1.92,"q":74,"c":[["M2",1.2985,336.96],["N2",0.2579,315.88],["S2",0.4536,15.05],["K2",0.1307,13.07],["2N2",0.0366,294.83],["S1",0.0122,98.26],["K1",0.1148,181.63],["P1",0.0362,167.39],["O1",0.1214,34.46],["Q1",0.0415,340.57],["M4",0.0769,323.25],["MM",0.0142,224.96],["MF",0.0204,218.29],["SA",0.098,247.5],["SSA",0.012,174.94],["T2",0.0211,5.6],["J1",0.004,257.72],["L2",0.0424,345.37],["R2",0.0063,50.21],["2Q1",0.0055,302.14],["MSQM",0.0046,225.03],["EP2",0.0056,293.06],["M3",0.0214,251.93],["MU2",0.0233,309.66],["MTM",0.0031,161.56],["NU2",0.052,320.15],["LAMBDA2",0.0152,323.68],["MN4",0.028,270.27],["MS4",0.022,81.7],["N4",0.0054,217.26],["M6",0.0513,47.83],["M8",0.0042,16.37],["S4",0.0072,299.03],["OO1",0.0037,318.87],["MA2",0.0077,226.86],["MB2",0.0049,150.41],["T3",0.0033,325.09],["R3",0.0035,32.07],["RHO1",0.0065,341.55],["SGM",0.0041,124.23],["3L2",0.0069,133.24],["2SM2",0.0082,174.64],["2MS6",0.049,88.84],["2MK5",0.0089,129.55],["2MO5",0.0071,139.25]]},{"id":"aberdeen","n":"Aberdeen","s":"Scotland","r":"north","la":57.144,"lo":-2.08,"off":2.555,"spr":3.66,"nep":2.03,"q":85,"c":[["M2",1.3008,24.49],["N2",0.2586,1.06],["S2",0.4401,62.69],["K2",0.1254,60.57],["2N2",0.0355,338.52],["S1",0.0102,123.85],["K1",0.1124,204.75],["P1",0.0343,191.57],["O1",0.1266,51.06],["Q1",0.0427,359.07],["M4",0.0317,167.46],["MM",0.0125,183.92],["MF",0.017,191.26],["SA",0.0945,235.16],["SSA",0.0122,164.92],["T2",0.0199,52.88],["J1",0.0044,267.5],["L2",0.0424,44.81],["R2",0.0055,95.19],["2Q1",0.0068,316.32],["M3",0.0119,320.47],["MU2",0.0204,313.84],["MTM",0.0045,183.44],["NU2",0.0526,6.82],["LAMBDA2",0.0153,32.14],["MN4",0.0078,146.88],["MS4",0.0294,243.81],["M6",0.007,111.78],["M8",0.005,59.36],["S4",0.0034,355.43],["OO1",0.0036,339.8],["MA2",0.0094,300.03],["MB2",0.0098,189.4],["R3",0.0035,112.77],["RHO1",0.0075,1.39],["SGM",0.0052,138.89],["3L2",0.0068,155.99],["2SM2",0.0052,267.26],["2MS6",0.0054,171.39]]},{"id":"leith","n":"Leith","s":"Edinburgh","r":"northeast","la":55.99,"lo":-3.182,"off":3.327,"spr":4.89,"nep":2.74,"q":85,"c":[["M2",1.7978,55.36],["N2",0.3511,31.93],["S2",0.6138,95.81],["K2",0.1751,93.81],["2N2",0.0464,6.91],["S1",0.0118,130.54],["K1",0.1205,220.79],["P1",0.0371,207.01],["O1",0.142,65.87],["Q1",0.047,14.24],["M4",0.076,183.08],["MM",0.0138,186.92],["MF",0.0164,197.94],["SA",0.0738,227.37],["SSA",0.0125,150.73],["T2",0.0278,91.48],["J1",0.0054,291.3],["L2",0.0628,72.98],["R2",0.0086,119.59],["2Q1",0.0066,335.29],["MSF",0.005,213.36],["M3",0.0217,10.41],["MU2",0.0199,1.61],["MTM",0.004,183.68],["NU2",0.0727,37.02],["LAMBDA2",0.0231,59.28],["MN4",0.0174,125.45],["MS4",0.0683,299.21],["M6",0.0483,286.28],["M8",0.0141,179.54],["S4",0.0151,80.2],["OO1",0.0046,359.91],["MA2",0.0141,319.86],["MB2",0.0128,193.96],["R3",0.0085,151.33],["RHO1",0.0084,16.23],["SGM",0.0052,152.61],["3L2",0.0089,188.3],["3N2",0.0045,150.73],["2SM2",0.0098,299.24],["2MS6",0.0475,340.42],["2MK5",0.014,89.74],["2MO5",0.0111,89.05]]},{"id":"northshields","n":"North Shields","s":"Tyneside","r":"northeast","la":55.007,"lo":-1.44,"off":3.009,"spr":4.41,"nep":2.47,"q":85,"c":[["M2",1.6029,88.9],["N2",0.3131,65.06],["S2",0.5376,130.83],["K2",0.1535,129.05],["2N2",0.0414,41.23],["S1",0.0096,160.53],["K1",0.1194,242.36],["P1",0.036,229.16],["O1",0.1384,81.76],["Q1",0.0469,30.04],["M4",0.0232,113.62],["MM",0.0159,186.69],["MF",0.0156,197.57],["SA",0.0797,229.76],["SSA",0.0122,166.94],["T2",0.0252,126.63],["J1",0.0059,311.66],["L2",0.0588,106.91],["R2",0.0069,156.41],["2Q1",0.0065,351.18],["MSF",0.0101,219.34],["M3",0.0141,60.68],["MU2",0.0136,43.86],["MTM",0.0047,195.11],["NU2",0.0652,69.45],["LAMBDA2",0.0223,94.26],["MN4",0.0135,82.62],["MS4",0.0163,91.97],["N4",0.0036,46.51],["M6",0.0079,18.9],["S4",0.0059,157.46],["OO1",0.0048,24.07],["MA2",0.0124,346.11],["MB2",0.0108,221.02],["R3",0.0049,198.3],["RHO1",0.0082,33.24],["SGM",0.0051,167.84],["3L2",0.0078,224.56],["3N2",0.0039,184.42],["2SM2",0.0103,341.05],["2MS6",0.0081,84.7],["2MK5",0.0031,256.38]]},{"id":"whitby","n":"Whitby","s":"North Yorkshire","r":"northeast","la":54.49,"lo":-0.615,"off":3.193,"spr":4.6,"nep":2.56,"q":85,"c":[["M2",1.659,104.29],["N2",0.3239,80.27],["S2",0.5577,147.09],["K2",0.159,145.46],["2N2",0.0438,56.32],["S1",0.01,174.11],["K1",0.1279,250.92],["P1",0.0387,238.58],["O1",0.1446,88.51],["Q1",0.0501,36.34],["M4",0.028,75.02],["MM",0.0165,183.66],["MF",0.0138,195.85],["SA",0.08,222.52],["SSA",0.0098,152.11],["T2",0.0263,141.91],["J1",0.0064,326.81],["L2",0.0609,122.05],["R2",0.007,178.42],["2Q1",0.0069,356.92],["MSF",0.0124,227.01],["M3",0.0137,87.93],["MU2",0.0144,61.02],["MTM",0.0055,203.66],["NU2",0.0672,83.89],["LAMBDA2",0.024,109.17],["MN4",0.013,64.23],["MS4",0.0298,101.47],["MKS2",0.0031,223.06],["N4",0.0034,39.39],["M6",0.0113,357.85],["M8",0.0051,79.28],["S4",0.0061,174.33],["OO1",0.0047,28.71],["MA2",0.0131,2.64],["MB2",0.0105,239.4],["R3",0.0041,232.8],["RHO1",0.0074,35.25],["SGM",0.005,168.76],["3L2",0.0083,243.83],["3N2",0.0039,198.17],["2SM2",0.0117,358.08],["2MS6",0.0123,52.99]]},{"id":"tobermory","n":"Tobermory","s":"Isle of Mull","r":"northwest","la":56.623,"lo":-6.064,"off":2.568,"spr":3.76,"nep":1.69,"q":84,"c":[["M2",1.301,168.59],["N2",0.2631,148.08],["S2",0.5293,205.07],["K2",0.1507,202.74],["2N2",0.0362,128.53],["S1",0.0057,66.93],["K1",0.0642,168.99],["P1",0.0171,165.23],["O1",0.0621,23.9],["Q1",0.0274,322.31],["M4",0.0453,181.53],["MM",0.0116,191.89],["MF",0.0186,202.5],["SA",0.099,242.98],["SSA",0.0173,168.23],["T2",0.0263,198.17],["L2",0.0256,172.8],["R2",0.0041,220.42],["2Q1",0.006,269.59],["MSQM",0.0033,216.69],["EP2",0.0137,111.88],["M3",0.0383,107.53],["MU2",0.0575,133.76],["NU2",0.047,149.82],["LAMBDA2",0.0059,121.54],["MN4",0.015,118.48],["MS4",0.0356,289.1],["MKS2",0.0058,171.86],["M6",0.0134,9.46],["S4",0.007,73.19],["S3",0.0044,284.15],["MA2",0.0084,65.89],["T3",0.0072,345.62],["R3",0.0133,172.19],["RHO1",0.0046,332.09],["SGM",0.006,98.95],["3L2",0.0081,320.62],["2SM2",0.0072,294.04],["2MS6",0.0118,43.59]]},{"id":"millport","n":"Millport","s":"Firth of Clyde","r":"northwest","la":55.75,"lo":-4.906,"off":2.097,"spr":2.96,"nep":1.98,"q":85,"c":[["M2",1.1186,342.52],["N2",0.2109,315.64],["S2",0.2955,34.98],["K2",0.0868,34.47],["2N2",0.0266,287.6],["S1",0.0116,100.75],["K1",0.1096,192.51],["P1",0.0376,187.34],["O1",0.0972,44.68],["Q1",0.0337,342.72],["M4",0.0887,90.55],["MM",0.0105,203.4],["MF",0.0194,202.66],["SA",0.103,246.72],["SSA",0.0204,160.08],["T2",0.019,23.79],["L2",0.0646,2.98],["R2",0.0037,42.34],["2Q1",0.007,291.58],["MSF",0.0039,58.6],["EP2",0.0117,106.72],["M3",0.0511,104.96],["MU2",0.036,118.92],["NU2",0.0553,316.83],["LAMBDA2",0.032,358.73],["MN4",0.0368,80.32],["MS4",0.0863,118.8],["MKS2",0.0055,154.38],["N4",0.0116,55.41],["M6",0.0243,303.48],["S4",0.0136,190.52],["S3",0.0071,286.62],["MA2",0.0034,324.69],["MB2",0.0072,11.68],["T3",0.0086,358.02],["R3",0.0171,194.32],["RHO1",0.0072,351.55],["3L2",0.0041,166.33],["2SM2",0.025,262.43],["2MS6",0.0265,350.74],["2MK5",0.0043,135.08],["2MO5",0.0034,163.09]]},{"id":"portpatrick","n":"Portpatrick","s":"Galloway","r":"northwest","la":54.843,"lo":-5.12,"off":2.297,"spr":3.45,"nep":2.23,"q":85,"c":[["M2",1.3383,332.2],["N2",0.256,305.51],["S2",0.3753,16.64],["K2",0.1088,16.21],["2N2",0.0336,279.86],["S1",0.0109,106.29],["K1",0.1089,190.53],["P1",0.0385,186.12],["O1",0.0993,43.01],["Q1",0.0337,342.37],["M4",0.0031,4.7],["MM",0.0151,203.28],["MF",0.0212,200.28],["SA",0.0948,237.79],["SSA",0.0245,153.46],["T2",0.0234,11.7],["L2",0.0672,358.21],["R2",0.0039,22.39],["2Q1",0.0073,291.93],["MSF",0.0094,211.9],["MSQM",0.0032,229.65],["EP2",0.0113,113.39],["M3",0.0203,98.84],["MU2",0.0321,134.74],["NU2",0.0626,310.08],["LAMBDA2",0.0322,353.8],["MS4",0.0088,83.64],["MKS2",0.0053,167.69],["M6",0.0043,228.83],["MB2",0.007,0.19],["T3",0.0031,357.76],["R3",0.0063,187.09],["RHO1",0.0068,346.77],["3L2",0.0054,141.34],["2SM2",0.0228,257.93],["2MS6",0.0053,258.27]]},{"id":"portrush","n":"Portrush","s":"Northern Ireland","r":"northwest","la":55.207,"lo":-6.657,"off":1.202,"spr":1.76,"nep":0.88,"q":85,"c":[["M2",0.5379,197.53],["N2",0.1189,173.54],["S2",0.2347,211.61],["K2",0.0647,208.92],["2N2",0.0174,149.85],["S1",0.0081,74.94],["K1",0.0938,174.24],["P1",0.0298,168.94],["O1",0.0857,27.73],["Q1",0.0331,327.05],["M4",0.0182,94.51],["MM",0.0125,203.31],["MF",0.0174,206.68],["SA",0.0856,239.27],["SSA",0.0168,167.34],["T2",0.0103,208.6],["L2",0.0179,305.11],["2Q1",0.0074,275.38],["EP2",0.0148,83.48],["M3",0.0377,98.99],["MU2",0.0555,107.74],["NU2",0.0205,202.51],["LAMBDA2",0.0131,324.44],["MN4",0.0106,64.37],["MS4",0.0073,65.33],["MKS2",0.006,148.25],["N4",0.003,19.8],["M6",0.0182,124.01],["S4",0.003,110.08],["S3",0.0049,275.94],["MA2",0.0052,71.63],["MB2",0.0036,1.02],["T3",0.0064,341.99],["R3",0.0118,179.75],["RHO1",0.0061,334.4],["SGM",0.0034,103.65],["3L2",0.0033,332.65],["2SM2",0.0128,241.75],["2MS6",0.0204,166.68]]},{"id":"bangor","n":"Bangor","s":"Northern Ireland","r":"northwest","la":54.665,"lo":-5.669,"off":1.964,"spr":2.93,"nep":2.04,"q":62,"c":[["M2",1.1624,317.6],["N2",0.2208,290.29],["S2",0.2925,359.58],["K2",0.0848,359.88],["2N2",0.028,263.43],["S1",0.0112,93.46],["K1",0.1088,186.95],["P1",0.0367,180.18],["O1",0.0988,39.56],["Q1",0.0356,340.4],["M4",0.0131,90.82],["MM",0.0114,191.8],["MF",0.0179,197.3],["SA",0.0863,240.43],["SSA",0.0195,149.11],["T2",0.0179,355.4],["J1",0.0032,282.48],["L2",0.0665,348.24],["R2",0.0034,12.79],["2Q1",0.0078,286.45],["MSF",0.0057,98.04],["EP2",0.0148,99.07],["M3",0.0268,115.17],["MU2",0.0444,120.72],["NU2",0.0572,297.33],["LAMBDA2",0.0323,345.76],["MN4",0.0072,100.91],["MS4",0.0175,108.52],["MKS2",0.0064,158.77],["M6",0.0074,192.52],["M8",0.0031,256.59],["S3",0.0037,298.02],["MB2",0.0071,1.07],["T3",0.0047,10.92],["R3",0.0082,204.8],["RHO1",0.0074,340.33],["3L2",0.0047,118.9],["2SM2",0.0231,252.27],["2MS6",0.0094,231.08]]},{"id":"workington","n":"Workington","s":"Cumbria","r":"northwest","la":54.651,"lo":-3.567,"off":4.56,"spr":7.25,"nep":4.13,"q":85,"c":[["M2",2.7368,331.98],["N2",0.524,307.8],["S2",0.8732,15.59],["K2",0.251,14.28],["2N2",0.0665,283.91],["S1",0.0136,100.21],["K1",0.1237,194.41],["P1",0.0436,187.54],["O1",0.1099,45.66],["Q1",0.0369,346.67],["M4",0.1368,252.39],["MM",0.0158,208.77],["MF",0.0221,202.38],["SA",0.0971,241.3],["SSA",0.0227,170.11],["T2",0.0486,7.11],["J1",0.0041,285.92],["L2",0.1198,351.01],["R2",0.0094,26.64],["2Q1",0.0077,305.16],["MSF",0.0054,194.52],["EP2",0.0094,82.8],["M3",0.0177,334.55],["MU2",0.0189,74.92],["NU2",0.1194,308.56],["LAMBDA2",0.0512,343.36],["MN4",0.0529,221.33],["MS4",0.0692,299.94],["MKS2",0.0069,129.47],["N4",0.0109,189.74],["M6",0.0154,281.71],["S4",0.0077,329.79],["MA2",0.0151,264.35],["MB2",0.0103,10.3],["T3",0.0045,176.4],["R3",0.0071,25.37],["RHO1",0.0082,346.51],["3L2",0.0117,138.85],["2SM2",0.0319,242.26],["2MS6",0.0185,326.95]]},{"id":"heysham","n":"Heysham","s":"Lancashire","r":"northwest","la":54.032,"lo":-2.92,"off":5.184,"spr":8.32,"nep":4.72,"q":85,"c":[["M2",3.1677,325.54],["N2",0.6038,301.65],["S2",1.0272,8.49],["K2",0.2958,7.15],["2N2",0.0803,278.63],["S1",0.0147,104.9],["K1",0.1242,191.9],["P1",0.0441,186],["O1",0.1127,42.55],["Q1",0.0367,343.93],["M4",0.1999,245.31],["MM",0.0198,208.08],["MF",0.0212,209.02],["SA",0.091,232.54],["SSA",0.0236,159.32],["T2",0.0559,2.68],["J1",0.0041,289.68],["L2",0.1342,344.4],["R2",0.0115,11.37],["2Q1",0.0084,301.8],["MSF",0.0121,216.09],["MSQM",0.0038,231.93],["EP2",0.0103,80.7],["M3",0.0351,308.66],["MU2",0.0211,61.49],["NU2",0.1369,301.59],["LAMBDA2",0.0587,336.48],["MN4",0.0738,215.71],["MS4",0.1155,295.17],["MKS2",0.0074,124.77],["N4",0.016,190.56],["M6",0.0114,45.5],["M8",0.0128,225.38],["S4",0.0128,335.75],["OO1",0.0034,342.21],["S3",0.0045,116.79],["MA2",0.0161,251.32],["MB2",0.0149,4.38],["T3",0.0082,163.34],["R3",0.0137,11.43],["RHO1",0.0085,340.24],["3L2",0.0118,148.08],["2SM2",0.0359,234.39],["2MS6",0.0128,84.61],["2MK5",0.0044,147.33]]},{"id":"liverpool","n":"Liverpool","s":"Merseyside","r":"northwest","la":53.45,"lo":-3.018,"off":5.297,"spr":8.06,"nep":4.58,"q":85,"c":[["M2",3.0369,320.73],["N2",0.5796,298.11],["S2",0.9761,4.86],["K2",0.281,3.71],["2N2",0.0748,275.53],["S1",0.0154,100.82],["K1",0.1241,190.88],["P1",0.044,183.62],["O1",0.1142,41.47],["Q1",0.0362,346.57],["M4",0.2336,203.11],["MM",0.0141,204.28],["MF",0.019,211.49],["SA",0.0878,231.4],["SSA",0.0216,159.61],["T2",0.0545,356.73],["J1",0.0054,288.21],["L2",0.134,334.02],["R2",0.0112,7.92],["2Q1",0.0076,308.59],["MSF",0.0077,201.05],["EP2",0.0154,32.31],["M3",0.0333,298.93],["MU2",0.0459,32.06],["NU2",0.1339,296.77],["LAMBDA2",0.0602,321.77],["MN4",0.0922,175.77],["MS4",0.1425,245.68],["MKS2",0.0108,88.45],["N4",0.021,151.46],["M6",0.0558,348.88],["M8",0.0146,242.55],["S4",0.0208,284.49],["OO1",0.0043,350.07],["S3",0.0043,106.06],["MA2",0.017,241],["MB2",0.0168,359.83],["T3",0.0084,159.52],["R3",0.0155,0.57],["RHO1",0.0076,347.09],["3L2",0.0132,128.99],["2SM2",0.0355,214.86],["2MS6",0.0528,31.49],["2MK5",0.0096,120.93],["2MO5",0.0063,143.78]]},{"id":"porterin","n":"Port Erin","s":"Isle of Man","r":"northwest","la":54.085,"lo":-4.768,"off":3.161,"spr":4.81,"nep":2.86,"q":85,"c":[["M2",1.8327,321.67],["N2",0.3554,295.6],["S2",0.558,1.27],["K2",0.1599,0.41],["2N2",0.0466,268.5],["S1",0.0118,106.75],["K1",0.1115,188.98],["P1",0.0395,183.53],["O1",0.1024,41.81],["Q1",0.0342,343.06],["M4",0.0122,80.01],["MM",0.0116,210.26],["MF",0.0174,202.3],["SA",0.0835,234.21],["SSA",0.0209,146.64],["T2",0.0318,355.82],["J1",0.0032,283.89],["L2",0.081,351.64],["R2",0.0054,7.99],["2Q1",0.007,295.53],["MSQM",0.0037,216.33],["EP2",0.0127,124.41],["M3",0.0038,249.71],["MU2",0.0333,158.9],["NU2",0.0817,301.42],["LAMBDA2",0.0356,349.48],["MN4",0.0044,70.88],["MS4",0.01,131.36],["MKS2",0.006,173.66],["M6",0.0108,277.48],["MA2",0.0066,253.94],["MB2",0.0064,345.51],["RHO1",0.0074,344.24],["3L2",0.0066,133.69],["2SM2",0.023,251.22],["2MS6",0.01,314.61]]},{"id":"immingham","n":"Immingham","s":"Humber","r":"eastmid","la":53.63,"lo":-0.188,"off":4.081,"spr":6.08,"nep":3.53,"q":84,"c":[["M2",2.2558,161.81],["N2",0.4218,140.54],["S2",0.7398,212.23],["K2",0.2117,210.11],["2N2",0.0569,119.15],["S1",0.0115,202.29],["K1",0.1516,281.25],["P1",0.0497,268.78],["O1",0.1685,114.31],["Q1",0.0561,61.48],["M4",0.0202,198.11],["MM",0.0071,175.85],["MF",0.0094,188.24],["SA",0.0694,213.22],["SSA",0.0064,95.34],["T2",0.0374,195.36],["J1",0.0091,1.32],["L2",0.1095,166.25],["R2",0.0087,286.33],["2Q1",0.0084,27.43],["MSF",0.0048,24.87],["EP2",0.0231,212.36],["M3",0.0217,203.39],["MU2",0.0836,223.06],["NU2",0.0973,133.8],["LAMBDA2",0.0537,151.2],["MN4",0.0104,199.41],["MS4",0.0334,251.08],["MKS2",0.0143,284.71],["N4",0.0034,180.63],["M6",0.0112,164.66],["M8",0.0127,163.95],["S4",0.0096,329.31],["OO1",0.0071,68],["MA2",0.0277,101.84],["MB2",0.0178,355.39],["T3",0.0036,230.08],["R3",0.0138,357.91],["RHO1",0.0104,66.43],["3L2",0.0104,318.25],["3N2",0.0056,262.58],["2SM2",0.0367,38.84],["2MS6",0.0201,198.03],["2MK5",0.0123,224.34],["2MO5",0.0095,233.51]]},{"id":"cromer","n":"Cromer","s":"Norfolk","r":"eastmid","la":52.934,"lo":1.302,"off":2.995,"spr":4.33,"nep":2.45,"q":84,"c":[["M2",1.5674,188.27],["N2",0.302,164.6],["S2",0.53,234.62],["K2",0.1502,233.58],["2N2",0.0391,140.96],["S1",0.0111,237.74],["K1",0.1454,301.51],["P1",0.0479,289.64],["O1",0.1579,133.13],["Q1",0.0517,77.68],["M4",0.087,281.77],["MM",0.0146,183.51],["MF",0.0073,225.21],["SA",0.067,208.43],["SSA",0.0038,136.26],["T2",0.0261,220.71],["J1",0.0071,27.41],["L2",0.0635,199.34],["R2",0.0064,290.38],["2Q1",0.007,44.56],["MSF",0.0128,240.28],["EP2",0.0058,246.46],["M3",0.0152,226.15],["MU2",0.0178,201.83],["MTM",0.0048,212.42],["NU2",0.0606,166.01],["LAMBDA2",0.0294,185.38],["MN4",0.0339,264.9],["MS4",0.0698,327.44],["MKS2",0.0052,291.67],["N4",0.0081,244.09],["M6",0.0273,36.77],["M8",0.0059,109.42],["S4",0.0097,38.7],["OO1",0.0075,77.49],["MA2",0.0145,114.63],["MB2",0.0095,9.32],["R3",0.0116,27.26],["RHO1",0.0094,79.9],["3L2",0.0085,332.05],["3N2",0.0039,297.72],["2SM2",0.0201,68.87],["2MS6",0.0256,79.68],["2MK5",0.0145,40.97],["2MO5",0.0105,49.17]]},{"id":"lowestoft","n":"Lowestoft","s":"Suffolk","r":"eastmid","la":52.473,"lo":1.75,"off":1.589,"spr":2.05,"nep":1.26,"q":85,"c":[["M2",0.6906,259.35],["N2",0.1331,230.4],["S2",0.208,298.38],["K2",0.0587,298.33],["2N2",0.0179,203.64],["S1",0.0109,273.88],["K1",0.1187,331.1],["P1",0.0427,318],["O1",0.1353,160.18],["Q1",0.0452,105.04],["M4",0.048,335.23],["MM",0.0112,182.45],["MF",0.0086,191.14],["SA",0.0657,209.87],["SSA",0.0061,132.27],["T2",0.0092,277.35],["J1",0.0066,63.21],["L2",0.0306,296.69],["R2",0.0035,351.55],["2Q1",0.0065,68.29],["MSF",0.0062,246.31],["EP2",0.0053,36.57],["M3",0.006,296.67],["MU2",0.0249,95.21],["MTM",0.0031,225.21],["NU2",0.0324,249.29],["LAMBDA2",0.0119,275.46],["MN4",0.0169,320.48],["MS4",0.0393,25.63],["N4",0.0038,304.81],["M6",0.0413,116.91],["M8",0.0092,296.39],["S4",0.0042,112.68],["OO1",0.0061,118],["MA2",0.0038,237.21],["MB2",0.01,76.2],["R3",0.0047,138.66],["RHO1",0.0093,105.13],["3L2",0.0042,29.96],["3N2",0.0035,347.79],["2SM2",0.0046,140.89],["2MS6",0.0424,163.48],["2MK5",0.0126,93.18],["2MO5",0.0104,108.98]]},{"id":"felixstowe","n":"Felixstowe","s":"Suffolk","r":"eastmid","la":51.958,"lo":1.347,"off":2.144,"spr":3.35,"nep":2.21,"q":83,"c":[["M2",1.2585,321.4],["N2",0.2158,295.28],["S2",0.3482,13.44],["K2",0.1018,13.05],["2N2",0.0261,267.54],["S1",0.009,302.53],["K1",0.1089,349.28],["P1",0.04,336.75],["O1",0.1298,174.15],["Q1",0.0437,116.78],["M4",0.0745,322.02],["MM",0.0049,150.56],["SA",0.0595,205.59],["SSA",0.0037,11.01],["T2",0.0151,355.63],["J1",0.0059,88.46],["L2",0.0789,341.39],["R2",0.0039,70.87],["2Q1",0.0059,92.63],["MSF",0.0135,33.79],["MSQM",0.0047,138.7],["EP2",0.0178,55.48],["M3",0.0089,30.9],["MU2",0.0723,79.31],["MTM",0.0053,219.37],["NU2",0.066,295.41],["LAMBDA2",0.0334,332.09],["MN4",0.0226,294.74],["MS4",0.0487,34.25],["MKS2",0.0071,124.39],["N4",0.003,266.01],["M6",0.0544,269.81],["M8",0.0083,293.84],["OO1",0.0067,127.06],["MA2",0.0223,285.24],["MB2",0.0124,132.23],["R3",0.0085,200.67],["RHO1",0.0077,118.57],["3L2",0.005,94.52],["3N2",0.0046,12.39],["2SM2",0.0194,236.27],["2MS6",0.0535,318.14],["2MK5",0.0046,338.36]]},{"id":"harwich","n":"Harwich","s":"Essex","r":"eastmid","la":51.948,"lo":1.292,"off":2.258,"spr":3.55,"nep":2.32,"q":85,"c":[["M2",1.3176,325.15],["N2",0.2248,299.89],["S2",0.3659,18.25],["K2",0.1066,17.77],["2N2",0.0245,273.63],["S1",0.0085,306.87],["K1",0.1092,354.22],["P1",0.041,336.78],["O1",0.1284,176.34],["Q1",0.043,120.5],["M4",0.0836,330.27],["MM",0.0047,114.77],["MF",0.0097,172.14],["SA",0.064,205.14],["SSA",0.0111,107.35],["T2",0.0161,2],["J1",0.008,95.37],["L2",0.084,342.21],["R2",0.005,78.23],["2Q1",0.0075,80.47],["MSF",0.0129,57.28],["EP2",0.0191,53.17],["M3",0.0103,40.44],["MU2",0.0791,79.03],["MTM",0.004,297.99],["NU2",0.0703,297.29],["LAMBDA2",0.0364,333.37],["MN4",0.0259,306.86],["MS4",0.0545,44.15],["MKS2",0.0069,114.48],["N4",0.0049,286.06],["M6",0.0698,280.19],["M8",0.0121,300.49],["S4",0.0038,162.11],["OO1",0.0062,147.21],["MA2",0.0206,287.12],["MB2",0.0141,137.37],["R3",0.0085,207.18],["RHO1",0.009,125.61],["SGM",0.004,125.96],["3L2",0.0096,97.44],["3N2",0.0069,10.84],["2SM2",0.0212,235.05],["2MS6",0.0697,329.83],["2MK5",0.0044,337.63]]},{"id":"llandudno","n":"Llandudno","s":"North Wales","r":"westmid","la":53.332,"lo":-3.825,"off":4.587,"spr":7.04,"nep":4.02,"q":85,"c":[["M2",2.6893,309.9],["N2",0.5174,285.89],["S2",0.8672,351.24],["K2",0.2487,349.82],["2N2",0.0688,263.41],["S1",0.0133,100.54],["K1",0.1201,184.42],["P1",0.0434,177.82],["O1",0.1093,36.04],["Q1",0.0366,339.15],["M4",0.1132,186.33],["MM",0.0155,201.66],["MF",0.0198,201.26],["SA",0.0825,230.84],["SSA",0.024,143.01],["T2",0.0479,344.55],["J1",0.0044,280.06],["L2",0.1109,331.19],["R2",0.0074,354.54],["2Q1",0.008,298.74],["MSF",0.0072,206.08],["EP2",0.0073,79.29],["M3",0.0269,277.36],["MU2",0.0087,88.2],["NU2",0.1165,288.05],["LAMBDA2",0.047,322.52],["MN4",0.0428,159.04],["MS4",0.0656,232.41],["MKS2",0.0031,133.79],["N4",0.0094,135.55],["M6",0.0158,1.91],["M8",0.0033,358.73],["S4",0.0071,270.5],["S3",0.0033,89.51],["MA2",0.0136,237.32],["MB2",0.0106,329.94],["T3",0.0062,135.57],["R3",0.0104,342.4],["RHO1",0.0074,335.52],["3L2",0.0108,118.96],["2SM2",0.0271,219.64],["2MS6",0.0146,48.04]]},{"id":"holyhead","n":"Holyhead","s":"Anglesey","r":"westmid","la":53.314,"lo":-4.62,"off":3.321,"spr":4.84,"nep":2.7,"q":85,"c":[["M2",1.8056,291.83],["N2",0.359,266.92],["S2",0.5915,328.67],["K2",0.1691,327.15],["2N2",0.0483,243.87],["S1",0.0115,99],["K1",0.1068,176.34],["P1",0.0372,171.5],["O1",0.1003,29.91],["Q1",0.0334,334.65],["M4",0.0329,28.38],["MM",0.0257,209.67],["MF",0.024,210.17],["SA",0.0834,235.27],["SSA",0.017,140.17],["T2",0.0329,321.55],["J1",0.0037,264.6],["L2",0.0649,322.45],["R2",0.0056,333.99],["2Q1",0.0071,294.96],["MSF",0.0319,217.52],["EP2",0.0104,133.47],["M3",0.0185,245.4],["MU2",0.0331,180.02],["MTM",0.0038,225.93],["NU2",0.0761,273.43],["LAMBDA2",0.0262,320.92],["MN4",0.0143,358.54],["MS4",0.0121,48.21],["MKS2",0.0037,185.57],["N4",0.003,320.24],["M6",0.0212,226.28],["MA2",0.0079,243.31],["MB2",0.0038,298.28],["R3",0.0038,320.6],["RHO1",0.0078,332.67],["3L2",0.0082,93.35],["2SM2",0.0154,217.04],["2MS6",0.0185,265.56]]},{"id":"barmouth","n":"Barmouth","s":"Cardigan Bay","r":"westmid","la":52.717,"lo":-4.033,"off":2.503,"spr":4.23,"nep":2.05,"q":65,"c":[["M2",1.433,238.56],["N2",0.2849,218.21],["S2",0.538,276.96],["K2",0.1507,274.85],["2N2",0.0378,196.37],["S1",0.0122,81.51],["K1",0.0825,164.85],["P1",0.0335,160.89],["O1",0.0806,22.09],["Q1",0.022,325.67],["M4",0.2413,64.9],["MM",0.0066,354.16],["MF",0.0109,204.89],["SA",0.0497,234.82],["SSA",0.011,60.45],["T2",0.028,261.89],["J1",0.0038,290.37],["L2",0.0438,242.44],["R2",0.0074,255.67],["2Q1",0.0038,291],["MSF",0.0049,36.39],["MSQM",0.0063,120.85],["M3",0.0196,219.72],["MU2",0.0467,203.89],["NU2",0.0456,217.48],["LAMBDA2",0.0215,232.21],["MN4",0.0895,38.49],["MS4",0.1296,116.4],["N4",0.018,15.71],["M6",0.0081,133.26],["M8",0.0072,288.24],["S4",0.0167,167.54],["OO1",0.0033,332.3],["MA2",0.0121,179.34],["MB2",0.0136,252.09],["T3",0.0038,9.62],["R3",0.0031,215.42],["RHO1",0.0043,325.69],["SGM",0.0049,293.55],["3L2",0.0074,57.06],["3N2",0.0037,172.24],["2SM2",0.0203,114.38],["2MS6",0.0184,135.15],["2MK5",0.0043,330.03],["2MO5",0.0046,19.63]]},{"id":"fishguard","n":"Fishguard","s":"Pembrokeshire","r":"westmid","la":52.013,"lo":-4.984,"off":2.482,"spr":3.94,"nep":1.84,"q":84,"c":[["M2",1.3514,207.31],["N2",0.2786,188.43],["S2",0.5282,248.31],["K2",0.1519,245.95],["2N2",0.0391,169.81],["S1",0.0082,81.13],["K1",0.078,152.34],["P1",0.0267,147.72],["O1",0.0785,10.6],["Q1",0.025,316.29],["M4",0.1133,20.76],["MM",0.0059,213.84],["MF",0.0145,197.55],["SA",0.0693,230.15],["SSA",0.0268,128.82],["T2",0.0298,240.26],["L2",0.0366,194.79],["R2",0.0051,256.58],["2Q1",0.0051,276.53],["EP2",0.0168,160.42],["M3",0.0128,189.08],["MU2",0.0711,188.24],["NU2",0.0487,182.61],["LAMBDA2",0.0134,164.39],["MN4",0.0444,348.83],["MS4",0.0539,64.77],["MKS2",0.0059,235.13],["N4",0.0094,315.42],["S4",0.0057,75.23],["MB2",0.0105,191],["T3",0.0031,320.68],["R3",0.0036,146.73],["RHO1",0.0054,318.95],["3L2",0.0069,22.3],["2SM2",0.0104,66.87]]},{"id":"milfordhaven","n":"Milford Haven","s":"Pembrokeshire","r":"westmid","la":51.707,"lo":-5.052,"off":3.885,"spr":6.1,"nep":3.07,"q":85,"c":[["M2",2.2183,172.56],["N2",0.4314,153.07],["S2",0.8048,217.13],["K2",0.2328,215.05],["2N2",0.058,135.49],["S1",0.0067,63.36],["K1",0.0655,131.01],["P1",0.0218,125.63],["O1",0.0649,355.62],["Q1",0.0207,301.49],["M4",0.0648,306.99],["MM",0.0111,229.19],["MF",0.0171,194.8],["SA",0.0724,232.3],["SSA",0.0211,126.23],["T2",0.0464,211.05],["L2",0.0864,170.43],["R2",0.0093,218.82],["2Q1",0.0042,266.92],["MSF",0.0073,212.99],["EP2",0.0191,166.64],["M3",0.0162,126.79],["MU2",0.0806,187.81],["NU2",0.0895,145.13],["LAMBDA2",0.0363,153.28],["MN4",0.0247,274.76],["MS4",0.0314,357.15],["MKS2",0.0052,279.12],["N4",0.0048,245.48],["M6",0.0146,149.02],["MA2",0.0067,44.6],["MB2",0.0193,188.92],["T3",0.0052,306.88],["R3",0.0063,134.87],["RHO1",0.0046,305.6],["3L2",0.0091,344.37],["2SM2",0.0249,57.18],["2MS6",0.0141,202.77]]},{"id":"mumbles","n":"Mumbles","s":"Swansea Bay","r":"westmid","la":51.57,"lo":-3.975,"off":5.159,"spr":8.22,"nep":4.4,"q":82,"c":[["M2",3.1196,172.16],["N2",0.5858,153.9],["S2",1.1197,219.95],["K2",0.3237,217.62],["2N2",0.0794,136.49],["S1",0.0099,68.28],["K1",0.0665,130.47],["P1",0.0237,123.23],["O1",0.0681,353.17],["Q1",0.0211,301.22],["M4",0.0719,12.65],["MM",0.0115,207.53],["MF",0.0134,200.87],["SA",0.07,226.86],["SSA",0.0244,125],["T2",0.0617,213.49],["L2",0.1468,168.73],["R2",0.0099,225.22],["2Q1",0.0046,272.48],["MSF",0.0048,100.82],["EP2",0.0345,195.05],["M3",0.0304,143.43],["MU2",0.1459,213.08],["MTM",0.0054,189.13],["NU2",0.1289,140.67],["LAMBDA2",0.0679,151.69],["MN4",0.024,328.22],["MS4",0.0387,82.73],["MKS2",0.0156,301.33],["N4",0.0037,292.18],["M6",0.0358,3.19],["S3",0.0037,301.39],["MA2",0.0198,68.37],["MB2",0.0275,184.29],["T3",0.0097,333.36],["R3",0.012,166.35],["RHO1",0.0048,304.72],["3L2",0.0148,355.86],["2SM2",0.0526,53.42],["2MS6",0.041,58.47]]},{"id":"newport","n":"Newport","s":"Severn Estuary","r":"westmid","la":51.55,"lo":-2.987,"off":6.737,"spr":11.19,"nep":6.39,"q":85,"c":[["M2",4.1504,194.8],["N2",0.7401,181.13],["S2",1.472,252.71],["K2",0.4245,249.83],["2N2",0.0894,166.61],["S1",0.0157,82.12],["K1",0.069,140.79],["P1",0.0278,130.77],["O1",0.0714,1.62],["Q1",0.0224,312.13],["M4",0.1638,355.38],["MM",0.03,22.83],["MF",0.0143,73.09],["SA",0.0751,221.69],["SSA",0.0146,112.09],["T2",0.078,245.37],["L2",0.2716,180.07],["R2",0.0206,274.17],["2Q1",0.0037,280.33],["MSF",0.0935,50.9],["EP2",0.1083,240.01],["M3",0.0474,202.96],["MU2",0.44,251.83],["MTM",0.0086,114.28],["NU2",0.1747,149.67],["LAMBDA2",0.1592,172.47],["MN4",0.0902,336.36],["MS4",0.1449,12.74],["MKS2",0.058,324.64],["N4",0.0241,312.41],["M6",0.086,270.03],["M8",0.017,23.71],["S4",0.061,85.44],["S3",0.0051,7.9],["MA2",0.0396,98.68],["MB2",0.0331,212.79],["T3",0.0174,35.87],["R3",0.0239,222.43],["RHO1",0.0058,298.27],["SGM",0.0039,319.71],["3L2",0.0246,21.51],["3N2",0.0057,87.86],["2SM2",0.1341,70.06],["2MS6",0.1147,318.05]]},{"id":"avonmouth","n":"Avonmouth","s":"Severn Estuary","r":"westmid","la":51.508,"lo":-2.713,"off":7.137,"spr":11.69,"nep":6.69,"q":83,"c":[["M2",4.2632,200.59],["N2",0.7633,186.54],["S2",1.5098,260.04],["K2",0.4378,256.01],["2N2",0.093,178.03],["S1",0.0174,75.23],["K1",0.0679,142.73],["P1",0.0259,128.85],["O1",0.0743,3],["Q1",0.0223,314.7],["M1",0.0063,25.36],["M4",0.2667,347.44],["MM",0.036,29.87],["MF",0.0222,68.09],["SA",0.0762,215.27],["SSA",0.0188,128.01],["T2",0.0889,248.92],["L2",0.2775,184.63],["R2",0.0154,292.24],["2Q1",0.0043,300.72],["MSF",0.1178,50.53],["MSQM",0.0047,264.3],["EP2",0.1153,243.54],["M3",0.0498,212.75],["MU2",0.492,257.77],["MTM",0.007,86.2],["NU2",0.195,150.33],["LAMBDA2",0.1555,179.18],["MN4",0.1233,332.1],["MS4",0.2444,22.1],["MKS2",0.0636,324.69],["N4",0.032,311.63],["M6",0.1175,272.02],["M8",0.0221,40.24],["S4",0.0715,100.68],["S3",0.0071,20.99],["MA2",0.0245,143.86],["MB2",0.0322,201.91],["T3",0.0182,49.19],["R3",0.0257,231.4],["RHO1",0.0066,313.2],["SGM",0.0042,321.43],["3L2",0.017,30.69],["3N2",0.0034,129.67],["2SM2",0.1347,80.37],["2MS6",0.1476,327.79],["2MO5",0.004,117.81]]},{"id":"sheerness","n":"Sheerness","s":"Thames Estuary","r":"southeast","la":51.45,"lo":0.75,"off":3.146,"spr":5.1,"nep":3.49,"q":58,"c":[["M2",2.0053,353.64],["N2",0.3385,329.34],["S2",0.574,50.8],["K2",0.1679,49.98],["2N2",0.039,305.1],["S1",0.0109,332.01],["K1",0.1131,12.03],["P1",0.0389,352.71],["O1",0.1316,190.32],["Q1",0.042,134.32],["M4",0.1161,7.52],["MM",0.0083,47.12],["SA",0.0981,188.73],["SSA",0.0258,6.1],["T2",0.0272,32.49],["J1",0.0085,99.48],["L2",0.1319,7.72],["R2",0.0037,121.61],["2Q1",0.0076,110.61],["MSF",0.0176,56.65],["MSQM",0.0056,159.61],["EP2",0.0304,74.04],["M3",0.0165,94.69],["MU2",0.1301,91.54],["MTM",0.005,264.14],["NU2",0.1037,319.52],["LAMBDA2",0.0599,359.71],["MN4",0.0388,333.45],["MS4",0.0457,74.83],["MKS2",0.0143,151.3],["N4",0.0065,285.55],["M6",0.0509,36.5],["M8",0.0116,315.91],["S4",0.0033,31.54],["OO1",0.0077,157.4],["MA2",0.0376,312.77],["MB2",0.0105,188.07],["R3",0.0132,275.46],["RHO1",0.0067,122.77],["SGM",0.0032,169.4],["3L2",0.0094,128.41],["3N2",0.0073,64.03],["2SM2",0.0388,263.93],["2MS6",0.0502,89.52],["2MK5",0.0083,77.65],["2MO5",0.0054,109.58]]},{"id":"deal","n":"Deal","s":"Kent","r":"southeast","la":51.224,"lo":1.409,"off":3.434,"spr":5.17,"nep":3.26,"q":66,"c":[["M2",2.0511,335.52],["N2",0.3697,312.66],["S2",0.6343,28.08],["K2",0.1843,26.63],["2N2",0.0418,292.08],["S1",0.0077,283.57],["K1",0.0592,22.44],["P1",0.0221,2.79],["O1",0.0751,179.05],["Q1",0.027,119.84],["M4",0.1988,226.47],["MM",0.0105,185.42],["MF",0.0117,189.52],["SA",0.0698,210.27],["SSA",0.0179,117.88],["T2",0.0331,12.44],["J1",0.0035,149.42],["L2",0.1141,344.53],["R2",0.0081,61.68],["2Q1",0.0045,89.49],["MSF",0.0083,230.67],["MSQM",0.0045,86.82],["EP2",0.0239,45.51],["M3",0.0102,44.59],["MU2",0.085,60.03],["MTM",0.0037,243.72],["NU2",0.0942,304.83],["LAMBDA2",0.0547,335.83],["MN4",0.0723,203.04],["MS4",0.1257,278.97],["MKS2",0.0119,110.75],["N4",0.0141,181.19],["M6",0.0526,112.99],["M8",0.0177,38.37],["S4",0.0122,354.31],["OO1",0.0035,188.9],["MA2",0.0236,289.28],["MB2",0.0126,97.48],["R3",0.0037,335.11],["RHO1",0.006,130.04],["SGM",0.004,163.38],["3L2",0.0094,105.97],["2SM2",0.0383,232.55],["2MS6",0.0503,162.13],["2MK5",0.0101,275.09],["2MO5",0.0119,300.05]]},{"id":"dover","n":"Dover","s":"Kent","r":"southeast","la":51.114,"lo":1.323,"off":3.758,"spr":5.73,"nep":3.51,"q":85,"c":[["M2",2.2535,331.9],["N2",0.4107,309.48],["S2",0.7076,23.71],["K2",0.2054,22.19],["2N2",0.0507,287.14],["S1",0.0059,286.9],["K1",0.0495,41.52],["P1",0.0195,22.13],["O1",0.0567,179.39],["Q1",0.0218,118.26],["M4",0.259,221.3],["MM",0.0096,198.36],["MF",0.0133,197.14],["SA",0.0647,212.37],["SSA",0.0126,124.49],["T2",0.038,8.03],["J1",0.0043,181.09],["L2",0.1225,339.62],["R2",0.008,67.71],["2Q1",0.0031,75.74],["MSF",0.0127,224.77],["MSQM",0.0033,117.08],["EP2",0.0253,40.87],["M3",0.0107,35.4],["MU2",0.0893,50.67],["MTM",0.0042,250.42],["NU2",0.1006,301.85],["LAMBDA2",0.0601,329.02],["MN4",0.0941,197.9],["MS4",0.1676,273.54],["MKS2",0.014,108.51],["N4",0.0187,173.72],["M6",0.0669,103.46],["M8",0.0211,12.73],["S4",0.016,351.35],["OO1",0.0044,188.87],["MA2",0.0251,278.67],["MB2",0.007,88.01],["R3",0.0072,348.78],["RHO1",0.0044,130.5],["SGM",0.0035,170.15],["3L2",0.009,127.29],["2SM2",0.0431,224.78],["2MS6",0.0649,150.1],["2MK5",0.0089,249.07],["2MO5",0.011,284.97]]},{"id":"newhaven","n":"Newhaven","s":"East Sussex","r":"south","la":50.782,"lo":0.057,"off":3.53,"spr":5.79,"nep":3.31,"q":85,"c":[["M2",2.2451,320.99],["N2",0.4247,299.52],["S2",0.7273,10.74],["K2",0.2095,8.86],["2N2",0.0537,279.13],["S1",0.004,39.95],["K1",0.0755,104.17],["P1",0.0268,98.09],["O1",0.0107,336.09],["M1",0.0033,70.2],["M4",0.0877,249.29],["MF",0.0077,194.55],["SA",0.0614,219.42],["SSA",0.0176,120.42],["T2",0.0419,357.77],["J1",0.0061,208.62],["L2",0.1112,326.07],["R2",0.0063,47.66],["MSF",0.0113,43.26],["EP2",0.0181,23.59],["M3",0.0049,352.96],["MU2",0.0688,18.73],["NU2",0.0927,291.35],["LAMBDA2",0.0564,317.12],["MN4",0.0316,225.42],["MS4",0.0567,305.44],["MKS2",0.0134,100.38],["N4",0.0062,204.11],["M6",0.0222,163.42],["M8",0.0111,34.7],["S4",0.0042,39.81],["OO1",0.0054,255.65],["MA2",0.0128,254.22],["MB2",0.0077,330.06],["R3",0.0067,14.9],["SGM",0.0057,165.01],["3L2",0.0107,141.55],["2SM2",0.0454,214.01],["2MS6",0.024,205.37]]},{"id":"portsmouth","n":"Portsmouth","s":"Hampshire","r":"south","la":50.802,"lo":-1.111,"off":2.602,"spr":3.82,"nep":2.14,"q":85,"c":[["M2",1.4098,326.71],["N2",0.2762,303.89],["S2",0.4362,13.39],["K2",0.1245,11.85],["2N2",0.0354,282.86],["S1",0.0069,52.14],["K1",0.0878,112.3],["P1",0.0314,105.81],["O1",0.0272,346.62],["Q1",0.0035,327.41],["M1",0.0032,77.81],["M4",0.1869,13.75],["MF",0.0082,183.73],["SA",0.0635,220.97],["SSA",0.0172,124.33],["T2",0.0263,2.15],["J1",0.0066,214.65],["L2",0.0643,338.21],["R2",0.004,38.83],["MSF",0.0155,49.31],["EP2",0.0076,58.66],["MU2",0.0207,25],["NU2",0.0578,299.89],["LAMBDA2",0.0331,332.55],["MN4",0.0665,351.05],["MS4",0.1237,70.56],["MKS2",0.0069,125.9],["N4",0.0131,334.3],["M6",0.117,148.76],["M8",0.0051,196.74],["S4",0.0121,164.52],["OO1",0.0058,259.21],["MA2",0.0037,262.07],["MB2",0.0069,336.03],["R3",0.005,87.01],["SGM",0.0053,164.36],["3L2",0.0059,146.67],["2SM2",0.0262,231.94],["2MS6",0.121,197.31]]},{"id":"southampton","n":"Southampton","s":"Hampshire","r":"south","la":50.884,"lo":-1.393,"off":2.769,"spr":3.86,"nep":2.08,"q":68,"c":[["M2",1.3591,329.59],["N2",0.2633,305.52],["S2",0.4175,13.92],["K2",0.1185,12.64],["2N2",0.0337,281.29],["S1",0.01,58.47],["K1",0.0908,113.68],["P1",0.0332,107],["O1",0.0287,356.64],["Q1",0.0044,314.4],["M1",0.0036,66.44],["M4",0.2447,22.82],["MM",0.0035,89.76],["MF",0.012,179.48],["SA",0.0588,225.85],["SSA",0.0124,134.48],["T2",0.0242,1.89],["J1",0.0057,218.29],["L2",0.0522,346.71],["R2",0.0039,21.18],["MSF",0.0124,59.02],["EP2",0.0073,90.81],["M3",0.0035,215.05],["MU2",0.0051,48.51],["NU2",0.0541,303.04],["LAMBDA2",0.0313,346.12],["MN4",0.0829,359.84],["MS4",0.1617,79.4],["MKS2",0.008,124.61],["N4",0.0169,338.04],["M6",0.1875,148.27],["M8",0.0088,130.78],["S4",0.0143,172.16],["OO1",0.0059,266.87],["MA2",0.0054,290.44],["MB2",0.0061,332.29],["R3",0.0054,89.97],["SGM",0.0052,176.25],["3L2",0.0047,144.88],["3N2",0.0058,155.69],["2SM2",0.0251,246.77],["2MS6",0.1938,199.41]]},{"id":"bournemouth","n":"Bournemouth","s":"Dorset","r":"south","la":50.714,"lo":-1.875,"off":1.568,"spr":1.76,"nep":0.71,"q":82,"c":[["M2",0.4127,273.25],["N2",0.1069,247.88],["S2",0.1838,292.34],["K2",0.0502,290.46],["2N2",0.0177,222.75],["S1",0.0065,55.41],["K1",0.0898,112.08],["P1",0.0319,103.74],["O1",0.0412,348.8],["Q1",0.0085,315.97],["M1",0.0031,80.99],["M4",0.1875,20.3],["MF",0.0087,183.17],["SA",0.0613,211.3],["SSA",0.0249,111.54],["T2",0.0088,291.42],["J1",0.0064,209.96],["L2",0.0144,58.76],["MSF",0.0152,47.06],["EP2",0.0193,160.67],["M3",0.0083,187.71],["MU2",0.0711,191.33],["MTM",0.0039,210.42],["NU2",0.0134,281.14],["LAMBDA2",0.0135,58.36],["MN4",0.067,355.59],["MS4",0.1204,75.38],["MKS2",0.0076,230.63],["N4",0.0137,335.23],["M6",0.0706,78.38],["M8",0.0059,353.25],["S4",0.008,153.76],["OO1",0.0052,253.89],["MA2",0.0044,103.44],["R3",0.0045,126.02],["SGM",0.0057,160.31],["2SM2",0.0112,316.72],["2MS6",0.0741,121.97]]},{"id":"weymouth","n":"Weymouth","s":"Dorset","r":"south","la":50.608,"lo":-2.448,"off":1.355,"spr":2.09,"nep":0.77,"q":84,"c":[["M2",0.5997,191.24],["N2",0.1343,184.64],["S2",0.3127,242.77],["K2",0.0875,238.91],["2N2",0.0201,174.53],["S1",0.0056,60.05],["K1",0.0891,111.4],["P1",0.032,104.68],["O1",0.0487,349.59],["Q1",0.0109,309.55],["M1",0.0031,54.85],["M4",0.1444,25.72],["MM",0.0049,201.24],["MF",0.011,198.04],["SA",0.0673,220.26],["SSA",0.0227,121.1],["T2",0.0154,230.02],["J1",0.0053,205.19],["L2",0.0388,121.7],["R2",0.0033,272.51],["2Q1",0.0031,264.64],["MSF",0.0032,74.57],["EP2",0.0282,167.44],["M3",0.0099,183.88],["MU2",0.1111,192.54],["MTM",0.0034,209.64],["NU2",0.0147,138.58],["LAMBDA2",0.0259,101.47],["MN4",0.0504,0.68],["MS4",0.0867,81.97],["MKS2",0.0114,242.06],["N4",0.0106,334.49],["M6",0.0645,62.77],["M8",0.0032,45.69],["S4",0.0032,182.31],["OO1",0.0043,259.96],["MA2",0.007,92.3],["MB2",0.0038,195.04],["R3",0.0051,146.31],["SGM",0.0044,155.88],["3L2",0.0046,351.97],["2SM2",0.0209,359.03],["2MS6",0.0657,105.96],["2MK5",0.0034,85.34]]},{"id":"exmouth","n":"Exmouth","s":"Devon","r":"southwest","la":50.617,"lo":-3.424,"off":2.088,"spr":3.49,"nep":1.78,"q":56,"c":[["M2",1.1744,178.23],["N2",0.2189,169.26],["S2",0.4716,237.69],["K2",0.1351,234.17],["2N2",0.0279,165.46],["S1",0.0059,58.64],["K1",0.0835,118.96],["P1",0.0327,111.14],["O1",0.0531,357.25],["Q1",0.0142,309.78],["M4",0.0834,89.57],["MM",0.0124,23.33],["SA",0.0639,233.57],["SSA",0.0148,89.44],["T2",0.0263,225.32],["J1",0.0041,215.89],["L2",0.0845,148.61],["R2",0.0068,278.06],["MSF",0.0514,48.39],["MSQM",0.0043,123.41],["EP2",0.0406,208.23],["M3",0.0091,196.56],["MU2",0.155,218.78],["MTM",0.0069,122.02],["NU2",0.0391,129.09],["LAMBDA2",0.0529,137.78],["MN4",0.0273,57.85],["MS4",0.0442,149.25],["MKS2",0.0205,296.04],["N4",0.0055,20.9],["M6",0.0458,161.85],["M8",0.0092,188.01],["S4",0.0081,7.16],["OO1",0.0054,291.37],["MA2",0.011,94.4],["MB2",0.0062,246.11],["R3",0.006,181.66],["RHO1",0.0033,291.46],["SGM",0.0038,188.26],["3L2",0.0053,321.07],["2SM2",0.0459,36.19],["2MS6",0.0442,212.63],["2MK5",0.0058,110.61]]},{"id":"plymouth","n":"Plymouth","s":"Devonport, Devon","r":"southwest","la":50.368,"lo":-4.185,"off":3.274,"spr":4.63,"nep":2.42,"q":85,"c":[["M2",1.6849,153.57],["N2",0.3176,137.55],["S2",0.6061,206.57],["K2",0.1743,203.66],["2N2",0.0408,123.14],["S1",0.0055,41.59],["K1",0.0757,112.04],["P1",0.0267,104.67],["O1",0.056,347.07],["Q1",0.0152,298.3],["M4",0.1366,135.38],["MM",0.0059,227.46],["MF",0.0119,206.87],["SA",0.0671,228.91],["SSA",0.0245,116.35],["T2",0.0334,195.93],["L2",0.0902,138.64],["R2",0.0051,227.95],["2Q1",0.0032,263.88],["EP2",0.0311,173.19],["M3",0.0031,128.52],["MU2",0.1218,191.49],["MTM",0.0036,208.07],["NU2",0.0671,118.31],["LAMBDA2",0.046,122.02],["MN4",0.0513,110.27],["MS4",0.0942,189.7],["MKS2",0.0127,258.64],["N4",0.0108,84.89],["M6",0.0242,171.61],["M8",0.0127,236.93],["S4",0.0113,269.14],["MA2",0.0103,61],["MB2",0.0116,172.03],["RHO1",0.003,292.24],["3L2",0.0087,321.47],["2SM2",0.0343,21.13],["2MS6",0.0216,223.23]]},{"id":"newlyn","n":"Newlyn","s":"Cornwall","r":"southwest","la":50.103,"lo":-5.543,"off":3.02,"spr":4.61,"nep":2.46,"q":85,"c":[["M2",1.7116,133.71],["N2",0.3293,113.8],["S2",0.5721,177.79],["K2",0.1648,175.54],["2N2",0.0437,94.65],["S1",0.0034,22.33],["K1",0.0632,109.19],["P1",0.0212,101.43],["O1",0.0536,342.55],["Q1",0.0157,289.94],["M4",0.1116,167.47],["MM",0.0059,212.29],["MF",0.0129,192.91],["SA",0.0584,223.38],["SSA",0.023,102.83],["T2",0.033,170.89],["L2",0.0735,138.21],["R2",0.0042,186.43],["2Q1",0.003,247.64],["MSF",0.0036,113.09],["EP2",0.013,152.04],["M3",0.0107,28.84],["MU2",0.0533,169.69],["NU2",0.0722,106.5],["LAMBDA2",0.0311,123.91],["MN4",0.0413,139.31],["MS4",0.0737,218.5],["MKS2",0.0052,257.47],["N4",0.0084,114.01],["M6",0.0089,329.17],["M8",0.0035,277.19],["S4",0.0084,278.7],["MA2",0.0071,50.1],["MB2",0.0101,139.54],["RHO1",0.0032,290.14],["3L2",0.0068,297.67],["2SM2",0.0206,25.78],["2MS6",0.0088,28.58]]},{"id":"scilly","n":"St Mary's","s":"Isles of Scilly","r":"southwest","la":49.918,"lo":-6.317,"off":3.098,"spr":4.78,"nep":2.45,"q":59,"c":[["M2",1.7581,131.22],["N2",0.3441,111.93],["S2",0.6034,172.19],["K2",0.172,169.73],["2N2",0.0481,93.61],["S1",0.0034,323.62],["K1",0.0556,99.31],["P1",0.0187,101.08],["O1",0.0535,342.33],["Q1",0.0182,284.7],["M1",0.005,352.69],["M4",0.0633,185.92],["MF",0.0136,172.99],["SA",0.059,234.45],["SSA",0.0172,182.84],["T2",0.0358,166.88],["L2",0.0669,129.45],["R2",0.0033,117.51],["2Q1",0.0043,244.7],["MSF",0.0193,231.4],["MSQM",0.0071,163.16],["EP2",0.0119,125.58],["M3",0.0136,36.59],["MU2",0.0442,141.21],["MTM",0.0063,197.76],["NU2",0.0726,103.81],["LAMBDA2",0.0254,126.25],["MN4",0.0229,155.59],["MS4",0.0385,241.83],["MKS2",0.0037,188.99],["N4",0.004,127.51],["M6",0.0136,358.24],["S4",0.0048,308.24],["MA2",0.0083,65.26],["MB2",0.0149,137.73],["T3",0.003,217.58],["RHO1",0.0045,300.68],["3L2",0.0185,275.25],["3N2",0.0031,284.05],["2SM2",0.0135,26.06],["2MS6",0.0149,56.31]]},{"id":"ilfracombe","n":"Ilfracombe","s":"North Devon","r":"southwest","la":51.211,"lo":-4.112,"off":5.089,"spr":8.12,"nep":4.22,"q":85,"c":[["M2",3.0392,162.04],["N2",0.5751,143.91],["S2",1.1019,209.15],["K2",0.3198,206.69],["2N2",0.0754,125.28],["S1",0.0085,67.8],["K1",0.0654,124.89],["P1",0.0226,119.7],["O1",0.0665,349.81],["Q1",0.0211,295.12],["M4",0.1054,350.33],["MM",0.0174,198.05],["MF",0.0187,203.12],["SA",0.0732,225.02],["SSA",0.0276,125.51],["T2",0.0614,201.65],["L2",0.1368,156.72],["R2",0.0087,207.86],["2Q1",0.0046,263.39],["MSF",0.0255,214.46],["EP2",0.0341,178.96],["M3",0.0305,127.07],["MU2",0.1403,197.28],["MTM",0.0046,219.63],["NU2",0.1236,131.58],["LAMBDA2",0.0644,139.59],["MN4",0.036,314.05],["MS4",0.0594,52.58],["MKS2",0.0126,278.93],["N4",0.0064,281.08],["M6",0.0187,339.27],["S3",0.0035,287.92],["MA2",0.0179,66.29],["MB2",0.0268,170.97],["T3",0.0096,317.53],["R3",0.0121,147.05],["RHO1",0.0047,299.7],["3L2",0.0163,331.54],["3N2",0.0031,33.78],["2SM2",0.0483,41.05],["2MS6",0.0231,44.77]]},{"id":"hinkley","n":"Hinkley Point","s":"Somerset","r":"southwest","la":51.215,"lo":-3.134,"off":6.419,"spr":10.5,"nep":5.81,"q":85,"c":[["M2",3.9196,182.58],["N2",0.7159,167.59],["S2",1.3977,237.1],["K2",0.405,234.48],["2N2",0.0956,153.99],["S1",0.0156,76.06],["K1",0.0692,133.96],["P1",0.0267,124.3],["O1",0.0721,355.99],["Q1",0.0214,306.01],["M4",0.1017,19.72],["MM",0.005,355.83],["MF",0.0089,131.44],["SA",0.0713,229.36],["SSA",0.018,121.61],["T2",0.077,230.37],["L2",0.2331,170.45],["R2",0.015,254.89],["2Q1",0.0047,286.89],["MSF",0.0415,55.7],["EP2",0.0817,219.18],["M3",0.0444,177.3],["MU2",0.3353,234.72],["MTM",0.0035,168.48],["NU2",0.1655,142.47],["LAMBDA2",0.1259,158.83],["MN4",0.0476,336.69],["MS4",0.0318,24.21],["MKS2",0.0388,311.45],["N4",0.0112,292.38],["M6",0.042,213.04],["S4",0.0192,42.34],["S3",0.0047,338.45],["MA2",0.0266,95.07],["MB2",0.035,184.51],["T3",0.0151,9.74],["R3",0.0195,197.51],["RHO1",0.005,306.92],["3L2",0.0143,11.75],["3N2",0.0046,76.1],["2SM2",0.1007,56.01],["2MS6",0.0573,252.03]]}];</script>
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var SVGNS = 'http://www.w3.org/2000/svg';
+
+  var timeFmt = new Intl.DateTimeFormat('en-GB', { timeZone: TideCore.TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  function fmtTime(ms) { return timeFmt.format(new Date(ms)); }
+  function fmtDate(key, opts) {
+    var a = key.split('-').map(Number);
+    return new Intl.DateTimeFormat('en-GB', Object.assign({ timeZone: 'UTC' }, opts)).format(new Date(Date.UTC(a[0], a[1] - 1, a[2], 12)));
+  }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function m1(x) { return x.toFixed(1); }
+
+  var state = { station: 'dover', date: TideCore.dayKey(Date.now()) };
+
+  function stationById(id) { for (var i = 0; i < STATIONS.length; i++) if (STATIONS[i].id === id) return STATIONS[i]; return null; }
+
+  function readHash() {
+    var m = /^#([a-z]+)\/(\d{4}-\d{2}-\d{2})$/.exec(location.hash);
+    if (m && stationById(m[1])) { state.station = m[1]; state.date = m[2]; }
+  }
+  function writeHash() {
+    try { history.replaceState(null, '', '#' + state.station + '/' + state.date); } catch (e) { /* file:// or sandboxed */ }
+  }
+
+  /* ---------- pickers ---------- */
+  function renderPickers() {
+    var st = stationById(state.station);
+    var rbox = $('regions'); rbox.innerHTML = '';
+    REGIONS.forEach(function (r) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'chip'; b.textContent = r.label;
+      b.setAttribute('aria-pressed', String(r.key === st.r));
+      b.addEventListener('click', function () {
+        if (r.key === stationById(state.station).r) return;
+        for (var i = 0; i < STATIONS.length; i++) if (STATIONS[i].r === r.key) { state.station = STATIONS[i].id; break; }
+        update();
+      });
+      rbox.appendChild(b);
+    });
+    $('region-hint').textContent = REGIONS.filter(function (r) { return r.key === st.r; })[0].hint;
+
+    var pbox = $('ports'); pbox.innerHTML = '';
+    STATIONS.filter(function (s) { return s.r === st.r; }).forEach(function (s) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'chip'; b.textContent = s.n;
+      b.setAttribute('aria-pressed', String(s.id === st.id));
+      b.addEventListener('click', function () { state.station = s.id; update(); });
+      pbox.appendChild(b);
+    });
+    $('date').value = state.date;
+  }
+
+  /* ---------- chart ---------- */
+  function el(name, attrs, text) {
+    var e = document.createElementNS(SVGNS, name);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  function renderChart(res, st, W) {
+    var narrow = W < 520;
+    var H = narrow ? 330 : 350, ml = narrow ? 34 : 44, mr = narrow ? 14 : 20, mt = 34, mb = 66;
+    var hs = res.timeline.map(function (p) { return p.h; });
+    var lo = Math.min.apply(null, hs), hi = Math.max.apply(null, hs);
+    var ymin = Math.min(0, Math.floor(lo)), ymax = Math.ceil(hi + 0.7);
+    var step = (ymax - ymin) > 9 ? 2 : 1;
+    function x(t) { return ml + (t - res.start) / (res.end - res.start) * (W - ml - mr); }
+    function y(h) { return mt + (1 - (h - ymin) / (ymax - ymin)) * (H - mt - mb); }
+
+    var svg = el('svg', { viewBox: '0 0 ' + W + ' ' + H, role: 'img',
+      'aria-label': 'Tide height through the day at ' + st.n + '. The table beside this chart lists each high and low water.' });
+
+    for (var v = ymin; v <= ymax; v += step) {
+      svg.appendChild(el('line', { 'class': 'grid-line', x1: ml, x2: W - mr, y1: y(v), y2: y(v) }));
+      svg.appendChild(el('text', { 'class': 'axis-text', x: ml - 8, y: y(v) + 4, 'text-anchor': 'end' }, String(v)));
+    }
+    svg.appendChild(el('text', { 'class': 'axis-text', x: ml - 8, y: 16, 'text-anchor': 'end' }, 'm'));
+    var tickHours = narrow ? 6 : 3, ticks = 24 / tickHours;
+    for (var i = 0; i <= ticks; i++) {
+      var t = res.start + i * tickHours * 3600000;
+      if (t > res.end + 60000) break;
+      svg.appendChild(el('line', { 'class': 'grid-line', x1: x(t), x2: x(t), y1: y(ymax), y2: y(ymin) + 6 }));
+      svg.appendChild(el('text', { 'class': 'axis-text', x: x(t), y: H - 12, 'text-anchor': i === 0 ? 'start' : (i === ticks ? 'end' : 'middle') }, fmtTime(t)));
+    }
+
+    var d = res.timeline.map(function (p, k) { return (k ? 'L' : 'M') + x(p.t).toFixed(1) + ' ' + y(p.h).toFixed(1); }).join('');
+    var last = res.timeline[res.timeline.length - 1], first = res.timeline[0];
+    svg.appendChild(el('path', { 'class': 'area', d: d + 'L' + x(last.t).toFixed(1) + ' ' + y(ymin) + 'L' + x(first.t).toFixed(1) + ' ' + y(ymin) + 'Z' }));
+    var curve = el('path', { 'class': 'curve', d: d });
+    svg.appendChild(curve);
+
+    res.extremes.forEach(function (e) {
+      var cx = x(e.t), cy = y(e.h);
+      var anchor = cx < ml + 30 ? 'start' : (cx > W - mr - 30 ? 'end' : 'middle');
+      svg.appendChild(el('circle', { 'class': e.high ? 'hw-dot' : 'lw-dot', cx: cx, cy: cy, r: e.high ? 6 : 5.5 }));
+      var ty = e.high ? cy - 30 : cy + 22;
+      var hy = e.high ? cy - 13 : cy + 40;
+      svg.appendChild(el('text', { 'class': 'sounding-t', x: cx, y: ty, 'text-anchor': anchor }, fmtTime(e.t)));
+      svg.appendChild(el('text', { 'class': 'sounding-h', x: cx, y: hy, 'text-anchor': anchor }, m1(e.h)));
+    });
+
+    var now = Date.now();
+    if (now >= res.start && now < res.end) {
+      var best = res.timeline[0];
+      res.timeline.forEach(function (p) { if (Math.abs(p.t - now) < Math.abs(best.t - now)) best = p; });
+      svg.appendChild(el('line', { 'class': 'now-line', x1: x(now), x2: x(now), y1: mt - 6, y2: y(ymin) }));
+      svg.appendChild(el('circle', { 'class': 'now-dot', cx: x(now), cy: y(best.h), r: 5 }));
+      var nowX = x(now), nowAnchor = nowX > W - 90 ? 'end' : 'start';
+      svg.appendChild(el('text', { 'class': 'axis-text now-text', x: nowAnchor === 'end' ? nowX - 6 : nowX + 6, y: mt - 8, 'text-anchor': nowAnchor }, 'now ' + m1(best.h) + ' m'));
+    }
+    return { svg: svg, curve: curve };
+  }
+
+  function moonSvg(moon) {
+    var r = 22, c = 26;
+    var k = Math.cos(moon.elong * Math.PI / 180);
+    var rx = Math.abs(k) * r;
+    var waxing = moon.waxing;
+    var bulgeRight = waxing ? (k > 0) : (k < 0);
+    var path = 'M' + c + ' ' + (c - r) +
+      ' A' + r + ' ' + r + ' 0 0 ' + (waxing ? 1 : 0) + ' ' + c + ' ' + (c + r) +
+      ' A' + rx.toFixed(2) + ' ' + r + ' 0 0 ' + (bulgeRight ? 0 : 1) + ' ' + c + ' ' + (c - r) + 'Z';
+    return '<svg width="52" height="52" viewBox="0 0 52 52" role="img" aria-label="' + esc(moon.name) + '">' +
+      '<circle cx="' + c + '" cy="' + c + '" r="' + r + '" fill="#10293f"/>' +
+      '<path d="' + path + '" fill="#f3efe0"/>' +
+      '<circle cx="' + c + '" cy="' + c + '" r="' + r + '" fill="none" stroke="#10293f" stroke-width="1.5"/></svg>';
+  }
+
+  /* ---------- result ---------- */
+  function render() {
+    var st = stationById(state.station);
+    var out = $('result');
+    var res;
+    try {
+      res = TideCore.compute(window.createTidePredictor, st, state.date, 14);
+    } catch (err) {
+      out.innerHTML = '<div class="card"><p class="err">Could not work out the tides for this date. Pick a different date.</p></div>';
+      return;
+    }
+
+    var offStart = TideCore.offsetMs(res.start), offEnd = TideCore.offsetMs(res.end - 1);
+    var tz = offStart > 0 ? 'BST (British Summer Time)' : 'GMT';
+    var tzNote = 'Times are UK clock time, ' + tz + '.';
+    if (offStart !== offEnd) tzNote = 'The clocks change on this date. Times are UK clock time, shown as the clock reads at each moment.';
+
+    var rows = res.extremes.map(function (e) {
+      return '<tr><td class="time">' + fmtTime(e.t) + '</td>' +
+        '<td><span class="tide-name"><span class="dot ' + (e.high ? 'hw' : 'lw') + '" aria-hidden="true"></span>' + (e.high ? 'High water' : 'Low water') + '</span></td>' +
+        '<td class="num">' + m1(e.h) + ' m</td></tr>';
+    }).join('');
+
+    var v = res.verdict;
+    var pos = Math.max(0, Math.min(1, res.q)) * 100;
+    var maxRange = Math.max.apply(null, res.strip.map(function (d) { return isFinite(d.range) ? d.range : 0; })) || 1;
+
+    var stripHtml = res.strip.map(function (d) {
+      var kind = d.q >= 0.85 ? 'spring' : (d.q <= 0.15 ? 'neap' : 'between');
+      var e = TideCore.elongation(TideCore.dayStart(d.key) + 12 * 3600000);
+      var tag = (e < 6.1 || e > 353.9) ? 'New' : (Math.abs(e - 180) < 6.1 ? 'Full' : '');
+      var h = isFinite(d.range) ? Math.max(3, d.range / maxRange * 100) : 0;
+      return '<button type="button" class="day q-' + kind + '" data-key="' + d.key + '" aria-pressed="' + (d.key === state.date) + '" ' +
+        'aria-label="' + esc(fmtDate(d.key, { weekday: 'long', day: 'numeric', month: 'long' })) + ', range ' + (isFinite(d.range) ? m1(d.range) + ' metres' : 'unknown') + '">' +
+        '<span class="bars"><span class="bar" style="height:' + h.toFixed(0) + '%"></span></span>' +
+        '<span class="dow">' + fmtDate(d.key, { weekday: 'short' }) + '</span>' +
+        '<span class="dom">' + fmtDate(d.key, { day: 'numeric' }) + '</span>' +
+        '<span class="moon-tag">' + tag + '</span></button>';
+    }).join('');
+
+    out.innerHTML =
+      '<article class="card">' +
+        '<div class="place"><h2>' + esc(st.n) + '</h2><p class="where">' + esc(st.s) + '</p></div>' +
+        '<p class="when">' + esc(fmtDate(state.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })) + '</p>' +
+        '<div class="chart-scroll" id="chart"></div>' +
+      '</article>' +
+      '<div class="cols">' +
+        '<article class="card"><h3>High and low water</h3>' +
+          (rows ? '<table><thead><tr><th>Time</th><th>Tide</th><th class="num">Height</th></tr></thead><tbody>' + rows + '</tbody></table>' : '<p>No high or low water falls on this date.</p>') +
+          '<p class="note">' + esc(tzNote) + ' Heights are metres above chart datum, the level printed on Admiralty charts.</p>' +
+          (st.q < 70 ? '<p class="note">The tide gauge record behind ' + esc(st.n) + ' is shorter or noisier than at most ports, so allow extra margin on these times and heights.</p>' : '') +
+        '</article>' +
+        '<article class="card"><h3>Springs or neaps?</h3>' +
+          '<p class="verdict ' + v.kind + '">' + esc(v.title) + '</p><p class="verdict-detail">' + esc(v.detail) + '</p>' +
+          '<div class="gauge"><div class="gauge-track"><span class="gauge-mark" style="left:' + pos.toFixed(0) + '%"></span></div>' +
+          '<div class="gauge-ends"><span>Neaps</span><span>Springs</span></div></div>' +
+          '<dl class="facts"><dt>Range today</dt><dd>' + (isFinite(res.range) ? m1(res.range) + ' m' : 'n/a') + '</dd>' +
+          '<dt>Typical springs</dt><dd>' + m1(res.typical.spring) + ' m</dd>' +
+          '<dt>Typical neaps</dt><dd>' + m1(res.typical.neap) + ' m</dd></dl>' +
+          '<div class="moon">' + moonSvg(res.moon) + '<div><strong>' + esc(res.moon.name) + '</strong><br><span class="note" style="margin:0">' + Math.round(res.moon.illum * 100) + '% lit. Springs arrive a day or two after a new or full moon.</span></div></div>' +
+        '</article>' +
+      '</div>' +
+      '<article class="card"><h3>The next 14 days at ' + esc(st.n) + '</h3>' +
+        '<div class="strip">' + stripHtml + '</div>' +
+        '<div class="legend"><span><span class="swatch" style="background:var(--magenta)"></span>Springs</span>' +
+        '<span><span class="swatch" style="background:var(--water)"></span>In between</span>' +
+        '<span><span class="swatch" style="background:var(--neap)"></span>Neaps</span></div>' +
+        '<p class="note">Bar height is the tidal range for the day, from low water to high water. Select a day to see its times.</p></article>';
+
+    lastRes = res; lastSt = st;
+    drawChart(true);
+
+    Array.prototype.forEach.call(out.querySelectorAll('.day'), function (b) {
+      b.addEventListener('click', function () { state.date = b.getAttribute('data-key'); update(); });
+    });
+  }
+
+  var lastRes = null, lastSt = null, lastWidth = 0;
+  function drawChart() {
+    var box = $('chart');
+    if (!box || !lastRes) return;
+    var w = Math.max(300, Math.round(box.clientWidth) || 700);
+    lastWidth = w;
+    box.innerHTML = '';
+    var chart = renderChart(lastRes, lastSt, w);
+    box.appendChild(chart.svg);
+    try { chart.curve.style.setProperty('--len', Math.ceil(chart.curve.getTotalLength())); } catch (e) { /* no layout yet */ }
+  }
+  var resizeTimer;
+  window.addEventListener('resize', function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () {
+      var box = $('chart');
+      if (box && Math.abs(Math.round(box.clientWidth) - lastWidth) > 8) drawChart();
+    }, 150);
+  });
+
+  function update() { writeHash(); renderPickers(); render(); }
+
+  /* ---------- search ---------- */
+  function norm(s) {
+    return String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  function distKm(lat1, lon1, lat2, lon2) {
+    var R = 6371, rad = Math.PI / 180;
+    var dLat = (lat2 - lat1) * rad, dLon = (lon2 - lon1) * rad;
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+  }
+  function nearestPorts(lat, lon, n) {
+    return STATIONS.map(function (s) { return { s: s, d: distKm(lat, lon, s.la, s.lo) }; })
+      .sort(function (a, b) { return a.d - b.d; }).slice(0, n);
+  }
+  function localMatches(q) {
+    var nq = norm(q);
+    if (nq.length < 2) return [];
+    var hits = [];
+    STATIONS.forEach(function (s) {
+      var name = norm(s.n), sub = norm(s.s), score = -1;
+      if (name.indexOf(nq) === 0) score = 0;
+      else if (name.split(' ').some(function (w) { return w.indexOf(nq) === 0; })) score = 1;
+      else if (name.indexOf(nq) > -1) score = 2;
+      else if (sub.indexOf(nq) > -1) score = 3;
+      if (score > -1) hits.push({ s: s, score: score });
+    });
+    hits.sort(function (a, b) { return a.score - b.score || a.s.n.localeCompare(b.s.n); });
+    return hits.slice(0, 8).map(function (h) { return h.s; });
+  }
+
+  var resultsBox = $('results'), searchSeq = 0;
+  function closeResults() { searchSeq++; resultsBox.innerHTML = ''; }
+  function selectPort(id) {
+    state.station = id;
+    closeResults();
+    update();
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    try { $('result').scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' }); } catch (e) { /* ignore */ }
+  }
+  function portChip(s, distance) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'chip small';
+    b.setAttribute('aria-pressed', String(s.id === state.station));
+    b.appendChild(document.createTextNode(s.n));
+    if (distance != null) {
+      var d = document.createElement('span'); d.className = 'dist';
+      d.textContent = ' ' + (distance < 10 ? distance.toFixed(1) : Math.round(distance)) + ' km';
+      b.appendChild(d);
+    }
+    b.addEventListener('click', function () { selectPort(s.id); });
+    return b;
+  }
+  function group(titleText) {
+    var g = document.createElement('div'); g.className = 'res-group';
+    if (titleText) { var t = document.createElement('p'); t.className = 'res-title'; t.textContent = titleText; g.appendChild(t); }
+    return g;
+  }
+  function message(text, isErr) {
+    var p = document.createElement('p'); p.className = 'res-msg' + (isErr ? ' err' : ''); p.textContent = text; return p;
+  }
+  function renderLocal(q) {
+    resultsBox.innerHTML = '';
+    var hits = localMatches(q);
+    if (!hits.length) return hits;
+    var g = group('Ports');
+    var chips = document.createElement('div'); chips.className = 'chips';
+    hits.forEach(function (s) {
+      var c = portChip(s);
+      var sub = document.createElement('span'); sub.className = 'dist'; sub.textContent = ', ' + s.s;
+      c.appendChild(sub);
+      chips.appendChild(c);
+    });
+    g.appendChild(chips); resultsBox.appendChild(g);
+    return hits;
+  }
+  function placeTitle(item) {
+    var parts = String(item.display_name || item.name || '').split(', ');
+    return parts.slice(0, 3).join(', ');
+  }
+  function renderPlaces(items) {
+    var list = [];
+    items.forEach(function (it) {
+      var lat = parseFloat(it.lat), lon = parseFloat(it.lon);
+      if (!isFinite(lat) || !isFinite(lon)) return;
+      // Skip results within 3 km of one already listed (the same town found twice).
+      if (list.some(function (p) { return distKm(lat, lon, p.lat, p.lon) < 3; })) return;
+      list.push({ title: placeTitle(it), lat: lat, lon: lon });
+    });
+    if (!list.length) { resultsBox.appendChild(message('No places found. Try the name of a nearby town or a postcode.')); return; }
+    var g = group('Places, with the nearest ports');
+    list.slice(0, 4).forEach(function (pl) {
+      var row = document.createElement('div'); row.style.marginTop = '10px';
+      var name = document.createElement('p'); name.style.fontWeight = '600'; name.textContent = pl.title; row.appendChild(name);
+      var near = nearestPorts(pl.lat, pl.lon, 3);
+      if (near[0].d > 60) {
+        var far = document.createElement('p'); far.className = 'res-sub';
+        far.textContent = 'This is about ' + Math.round(near[0].d) + ' km from the nearest listed port, so these tides may not match what you see there.';
+        row.appendChild(far);
+      }
+      var chips = document.createElement('div'); chips.className = 'chips';
+      near.forEach(function (n) { chips.appendChild(portChip(n.s, n.d)); });
+      row.appendChild(chips); g.appendChild(row);
+    });
+    var note = document.createElement('p'); note.className = 'res-sub'; note.style.marginTop = '10px';
+    note.textContent = 'Distances are in a straight line. Across an estuary or round a headland, the nearest port is not always the best match.';
+    g.appendChild(note);
+    resultsBox.appendChild(g);
+  }
+
+  $('q').addEventListener('input', function () {
+    searchSeq++;
+    var q = $('q').value;
+    if (norm(q).length < 2) { resultsBox.innerHTML = ''; return; }
+    renderLocal(q);
+  });
+  $('q').addEventListener('keydown', function (e) { if (e.key === 'Escape') closeResults(); });
+
+  $('search-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var q = $('q').value.trim();
+    if (norm(q).length < 2) { resultsBox.innerHTML = ''; resultsBox.appendChild(message('Type at least two letters.')); return; }
+    var seq = ++searchSeq;
+    renderLocal(q);
+    var wait = message('Looking up places…'); resultsBox.appendChild(wait);
+    var btn = $('go'); btn.disabled = true;
+    var ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+    var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, 8000);
+    var url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&countrycodes=gb,im&accept-language=en-GB&q=' + encodeURIComponent(q);
+    fetch(url, ctrl ? { signal: ctrl.signal } : {})
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (items) {
+        if (seq !== searchSeq) return;
+        if (wait.parentNode) wait.parentNode.removeChild(wait);
+        renderPlaces(Array.isArray(items) ? items : []);
+      })
+      .catch(function () {
+        if (seq !== searchSeq) return;
+        if (wait.parentNode) wait.parentNode.removeChild(wait);
+        resultsBox.appendChild(message('The place lookup is not available right now. Check your connection and try again. Port names still match as you type.', true));
+      })
+      .then(function () { clearTimeout(timer); btn.disabled = false; });
+  });
+
+  /* ---------- date controls ---------- */
+  $('prev').addEventListener('click', function () { state.date = TideCore.addDays(state.date, -1); update(); });
+  $('next').addEventListener('click', function () { state.date = TideCore.addDays(state.date, 1); update(); });
+  $('today').addEventListener('click', function () { state.date = TideCore.dayKey(Date.now()); update(); });
+  $('date').addEventListener('change', function () {
+    var v = $('date').value;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(v)) { state.date = v; update(); }
+  });
+
+  readHash();
+  update();
+})();
+</script>
+</body>
+</html>
