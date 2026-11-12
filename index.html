@@ -25,9 +25,13 @@
   p.sub{color:var(--muted);margin:0 0 1.2em}
   section{background:var(--card);border:1px solid var(--line);border-radius:12px;
     padding:16px;margin:0 0 16px}
-  nav{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 16px}
+  nav{display:flex;flex-wrap:nowrap;gap:8px;margin:0 0 16px;
+    position:sticky;top:0;z-index:10;background:var(--bg);
+    padding:10px 0;overflow-x:auto;-webkit-overflow-scrolling:touch}
   nav a{background:var(--card);border:1px solid var(--line);border-radius:999px;
-    padding:6px 12px;font-size:.9rem;color:var(--accent);text-decoration:none}
+    padding:6px 12px;font-size:.9rem;color:var(--accent);text-decoration:none;
+    white-space:nowrap;flex:0 0 auto}
+  section{scroll-margin-top:64px}
   .warn{background:var(--warn-bg);border:1px solid var(--warn-line);border-radius:12px;
     padding:12px 16px;margin:0 0 16px;font-size:.95rem}
   table{border-collapse:collapse;width:100%;font-size:.95rem}
