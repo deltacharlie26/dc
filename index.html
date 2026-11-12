@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Baofeng BF-888S – PMR446 Quick Reference</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#fff; --text:#1c2230; --muted:#5b6475; --line:#dde1e8;
+    --accent:#0b6bcb; --warn-bg:#fff4d6; --warn-line:#e0b43a; --code:#eef1f6;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#12151b; --card:#1a1f28; --text:#e7eaf0; --muted:#9aa4b5; --line:#2b3240;
+      --accent:#5aa7ff; --warn-bg:#3a3012; --warn-line:#9a7d1f; --code:#232a36;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .wrap{max-width:820px;margin:0 auto;padding:20px 16px 48px}
+  h1{font-size:1.6rem;margin:.2em 0 .1em}
+  h2{font-size:1.2rem;margin:0 0 .6em;color:var(--accent)}
+  h3{font-size:1rem;margin:1em 0 .3em}
+  p.sub{color:var(--muted);margin:0 0 1.2em}
+  section{background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:16px;margin:0 0 16px}
+  nav{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 16px}
+  nav a{background:var(--card);border:1px solid var(--line);border-radius:999px;
+    padding:6px 12px;font-size:.9rem;color:var(--accent);text-decoration:none}
+  .warn{background:var(--warn-bg);border:1px solid var(--warn-line);border-radius:12px;
+    padding:12px 16px;margin:0 0 16px;font-size:.95rem}
+  table{border-collapse:collapse;width:100%;font-size:.95rem}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;font-size:.85rem}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  td.mono,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:6px}
+  .grid div{background:var(--code);border-radius:8px;padding:6px 8px;text-align:center;
+    font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9rem}
+  .grid small{display:block;color:var(--muted);font-size:.72rem}
+  ol,ul{padding-left:1.2em;margin:.3em 0}
+  li{margin:.25em 0}
+  kbd{background:var(--code);border:1px solid var(--line);border-radius:5px;
+    padding:1px 6px;font-size:.88em;font-family:inherit}
+  .two{display:grid;grid-template-columns:1fr;gap:0}
+  footer{color:var(--muted);font-size:.85rem;margin-top:24px}
+  @media print{nav{display:none} body{background:#fff;color:#000} section{break-inside:avoid}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Baofeng BF-888S Quick Reference</h1>
+<p class="sub">PMR446 channels, CTCSS / DCS codes, and VOX, scan and beep settings.</p>
+
+<nav>
+  <a href="#legal">Legal note</a>
+  <a href="#channels">Channels</a>
+  <a href="#ctcss">CTCSS</a>
+  <a href="#dcs">DCS</a>
+  <a href="#vox">VOX</a>
+  <a href="#scan">Scan</a>
+  <a href="#beep">Beep off</a>
+</nav>
+
+<div class="warn" id="legal">
+  <strong>Check before you transmit.</strong> UK licence-free PMR446 equipment must be
+  0.5&nbsp;W ERP with a fixed, non-removable antenna. The BF-888S is rated up to 5&nbsp;W and
+  has a detachable antenna, so it is not PMR446-compliant. Programming it to these
+  frequencies does not make it licence-exempt. This page is for reference and bench
+  testing; use the radio only where you are legally allowed to. Rules are set by Ofcom.
+</div>
+
+<section id="channels">
+  <h2>PMR446 channels</h2>
+  <p>16 channels, 12.5&nbsp;kHz spacing, FM, 446.00625 – 446.19375&nbsp;MHz. Program them into
+  radio positions 1–16 in this order.</p>
+  <div class="grid" id="chgrid"></div>
+  <p style="color:var(--muted);font-size:.9rem">
+    Note: when scan is enabled, position 16 on the selector becomes the scan position
+    (see <a href="#scan" style="color:var(--accent)">Scan</a>), so channel 16 can't be
+    used normally.
+  </p>
+  <h3>Radio settings for each channel</h3>
+  <ul>
+    <li>Bandwidth: narrow (12.5&nbsp;kHz)</li>
+    <li>TX and RX frequency the same (simplex, no offset)</li>
+    <li>Tones: CTCSS or DCS if wanted, otherwise off</li>
+  </ul>
+</section>
+
+<section id="ctcss">
+  <h2>CTCSS tones (Hz)</h2>
+  <p>38 standard sub-audible tones. Everyone in your group must use the same tone.
+  Tones do <em>not</em> make the conversation private; they only mute other users
+  on the same channel.</p>
+  <div class="grid" id="ctcssgrid"></div>
+</section>
+
+<section id="dcs">
+  <h2>DCS codes</h2>
+  <p>Digital coded squelch, an alternative to CTCSS. Every code can be normal
+  (<span class="mono">N</span>) or inverted (<span class="mono">I</span>), for example
+  <span class="mono">D023N</span> or <span class="mono">D023I</span>. All radios in the
+  group must use the same code and polarity.</p>
+  <div class="grid" id="dcsgrid"></div>
+</section>
+
+<section id="vox">
+  <h2>VOX (hands-free transmit)</h2>
+  <h3>Switch VOX on or off</h3>
+  <ol>
+    <li>Switch the radio off.</li>
+    <li>Turn the channel knob to any channel from <strong>1 to 5</strong>.</li>
+    <li>Hold <kbd>PTT</kbd> and <kbd>MONI</kbd> together.</li>
+    <li>While holding both, turn the radio on. Release when it powers up.</li>
+  </ol>
+  <p>Repeat the same steps to switch it back off.</p>
+  <h3>Set sensitivity</h3>
+  <p>VOX level is set in the programming software (CHIRP or the Baofeng software), not on
+  the radio. Too sensitive and it keys up on background noise; too low and it won't pick
+  up your voice. Start low and raise it until normal speech triggers it. A headset or
+  speaker-mic generally works better than the built-in mic.</p>
+</section>
+
+<section id="scan">
+  <h2>Scanning</h2>
+  <ol>
+    <li>In the software, set the scan option to <strong>SCAN</strong> and add the
+    channels to scan (at least two). Leave any "FM radio" option off; this radio has none
+    and it can stop scanning from working.</li>
+    <li>Switch the radio off and set the channel knob to <strong>16</strong>.</li>
+    <li>Hold <kbd>PTT</kbd> and <kbd>MONI</kbd> together while you turn the radio on.
+    This toggles scan on or off.</li>
+    <li>With scan on, turn the knob to <strong>16</strong>. The radio steps through the
+    other channels and stops when it hears a signal, then resumes when it goes quiet.</li>
+  </ol>
+</section>
+
+<section id="beep">
+  <h2>Beep and voice prompts off</h2>
+  <h3>Beep</h3>
+  <p>The beep tone is a software setting. Connect the programming cable, open
+  CHIRP (or the Baofeng software), find the beep / beep prompt setting, set it to
+  <strong>Off</strong>, then write to the radio.</p>
+  <h3>Voice prompt (the spoken channel announcement)</h3>
+  <ul>
+    <li><strong>Off for this session only:</strong> hold <kbd>MONI</kbd> while turning
+    the radio on (any channel).</li>
+    <li><strong>Permanently on or off:</strong> radio off, set channel knob to
+    <strong>10</strong>, hold <kbd>PTT</kbd> + <kbd>MONI</kbd> and turn the radio on.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Other power-on shortcuts</h2>
+  <p>Radio off, set the channel, hold <kbd>PTT</kbd> + <kbd>MONI</kbd>, then switch on.</p>
+  <table>
+    <tr><th>Channel</th><th>Function</th></tr>
+    <tr><td>1–5</td><td>VOX on / off</td></tr>
+    <tr><td>10</td><td>Voice prompt on / off</td></tr>
+    <tr><td>11</td><td>Alarm on / off (if enabled in software)</td></tr>
+    <tr><td>12</td><td>Locks transmitter on (power-cycle to reset); avoid</td></tr>
+    <tr><td>15</td><td>Language Chinese / English</td></tr>
+    <tr><td>16</td><td>Scan on / off (if enabled in software)</td></tr>
+  </table>
+  <p style="color:var(--muted);font-size:.9rem">
+    The BF-888S has no display or keypad. Frequencies, tones, VOX level and beep are all
+    set by cable in the programming software.
+  </p>
+</section>
+
+<footer>
+  Sources: BF-888S operating instructions (miklor.com summary of the Baofeng manual);
+  Ofcom PMR446 guidance. Quick reference only; check the manual and local rules.
+</footer>
+
+</div>
+
+<script>
+(function(){
+  var g=document.getElementById('chgrid');
+  for(var i=0;i<16;i++){
+    var f=(446.00625+i*0.0125).toFixed(5);
+    g.insertAdjacentHTML('beforeend','<div><small>Ch '+(i+1)+'</small>'+f+'</div>');
+  }
+  var ctcss=[67.0,71.9,74.4,77.0,79.7,82.5,85.4,88.5,91.5,94.8,97.4,100.0,103.5,107.2,
+    110.9,114.8,118.8,123.0,127.3,131.8,136.5,141.3,146.2,151.4,156.7,162.2,167.9,173.8,
+    179.9,186.2,192.8,203.5,210.7,218.1,225.7,233.6,241.8,250.3];
+  var c=document.getElementById('ctcssgrid');
+  ctcss.forEach(function(t,i){
+    c.insertAdjacentHTML('beforeend','<div><small>Code '+(i+1)+'</small>'+t.toFixed(1)+'</div>');
+  });
+  var dcs=[23,25,26,31,32,36,43,47,51,53,54,65,71,72,73,74,114,115,116,122,125,131,132,
+    134,143,145,152,155,156,162,165,172,174,205,212,223,225,226,243,244,245,246,251,252,
+    255,261,263,265,266,271,274,306,311,315,325,331,332,343,346,351,356,364,365,371,411,
+    412,413,423,431,432,445,446,452,454,455,462,464,465,466,503,506,516,523,526,532,546,
+    565,606,612,624,627,631,632,654,662,664,703,712,723,731,732,734,743,754];
+  var d=document.getElementById('dcsgrid');
+  dcs.forEach(function(n){
+    var s=('000'+n).slice(-3);
+    d.insertAdjacentHTML('beforeend','<div>D'+s+'</div>');
+  });
+})();
+</script>
+</body>
+</html>
